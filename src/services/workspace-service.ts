@@ -132,7 +132,9 @@ export class WorkspaceService {
   }
 
   /**
-   * Creates a new workspace and sets caller as owner
+   * Creates a new workspace.
+   * The database trigger `on_workspace_created` automatically sets caller as owner
+   * and provisions default workspace settings atomically.
    */
   static async createWorkspace(
     userId: string,
@@ -140,7 +142,6 @@ export class WorkspaceService {
   ): Promise<{ success: boolean; workspace?: Workspace; error?: string }> {
     const supabase = await createClient();
 
-    // 1. Create workspace
     const { data: workspace, error: wsError } = await supabase
       .from("workspaces")
       .insert({
@@ -156,27 +157,7 @@ export class WorkspaceService {
       return { success: false, error: wsError?.message || "Gagal membuat workspace" };
     }
 
-    const createdWorkspace = workspace as Workspace;
-
-    // 2. Add owner membership
-    const { error: memberError } = await supabase.from("workspace_members").insert({
-      workspace_id: createdWorkspace.id,
-      user_id: userId,
-      role: "owner",
-    });
-
-    if (memberError) {
-      return { success: false, error: memberError.message };
-    }
-
-    // 3. Create default workspace settings
-    await supabase.from("workspace_settings").insert({
-      workspace_id: createdWorkspace.id,
-      default_language: "id",
-      default_ai_model: "gemini-1.5-flash",
-    });
-
-    return { success: true, workspace: createdWorkspace };
+    return { success: true, workspace: workspace as Workspace };
   }
 
   /**
