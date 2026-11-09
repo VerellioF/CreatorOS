@@ -5,6 +5,30 @@ Format conforms to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0] - 2026-10-30
+
+### Phase 1: Foundation & Design System (COMPLETED)
+- **Application Core:**
+  - Initialized Next.js 15 App Router with strict TypeScript (`tsc --noEmit` clean).
+  - Configured Tailwind CSS with Dark and Light mode design tokens.
+  - Implemented `@supabase/ssr` (0.12.7) client and server architecture with cookie-based session handling.
+- **Authentication & Security:**
+  - Built real Sign In (`/sign-in`), Sign Up (`/sign-up`), and Forgot Password (`/forgot-password`) flows.
+  - Middleware route protection for `/dashboard`, `/settings`, `/creator-profile`, `/niche-discovery`.
+  - Zero exposed API secrets; input sanitization and Zod schemas across all boundaries.
+- **Multi-Tenant Workspaces:**
+  - Database migration `20261030000000_phase1_foundation.sql` establishing `profiles`, `workspaces`, `workspace_members`, and `workspace_settings`.
+  - Enforced PostgreSQL Row Level Security (RLS) on all tables with `has_workspace_access` helper function.
+  - Dynamic workspace switcher dropdown with modal dialog for creating new workspaces.
+- **Design System & Application Shell:**
+  - Reusable UI primitives: `Button`, `Input`, `Textarea`, `Card`, `Badge`, `Dialog`, `Skeleton`, `EmptyState`, `ErrorState`, `LoadingState`, `ThemeToggle`.
+  - Responsive Application Shell with categorized sidebar navigation, Coming Soon badges for unreleased modules, search trigger, and credit balance badge.
+  - Functional Settings module with tabbed profile, workspace, and appearance controls.
+- **Verification & Testing:**
+  - 23 Vitest unit and integration tests passing (`100%` pass rate).
+  - Next.js production build verified (`next build` succeeded in 21.5s).
+  - Live HTTP verification on local server: 200 OK on public routes, 307 redirect on protected routes, 404 on invalid paths.
+
 ## [Unreleased] - 2026-10-30
 
 ### Added
