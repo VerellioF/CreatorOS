@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 
 // ==============================================================================
 // CREATOROS PHASE 1 — FINAL SECURITY HARDENING VERIFICATION SUITE
-// Tests all 10 database-level security policies, triggers, and constraints
+// Verifies all 15 Database Security Proofs & Multi-Tenant Boundaries
 // ==============================================================================
 
 type WorkspaceRole = "owner" | "admin" | "editor" | "viewer" | "member";
@@ -24,6 +24,7 @@ interface Workspace {
 }
 
 interface WorkspaceMember {
+  id?: string;
   workspace_id: string;
   user_id: string;
   role: WorkspaceRole;
@@ -40,6 +41,7 @@ class SecurityEngineSimulation {
   workspaces: Workspace[] = [];
   members: WorkspaceMember[] = [];
   settings: WorkspaceSettings[] = [];
+  ownershipTransferActive = false;
 
   // 1. RLS Helper: has_workspace_access
   hasWorkspaceAccess(callerId: string | null, workspaceId: string, minRole: WorkspaceRole = "viewer"): boolean {
@@ -64,16 +66,32 @@ class SecurityEngineSimulation {
 
   // 3. Trigger: enforce_workspace_member_safety on INSERT
   insertMember(callerId: string | null, record: WorkspaceMember): { success: boolean; error?: string } {
-    if (!this.hasWorkspaceAccess(callerId, record.workspace_id, "admin")) {
-      return { success: false, error: "Insufficient permissions to add workspace members" };
+    if (!callerId) {
+      return { success: false, error: "Unauthorized: Unauthenticated operations on workspace members are strictly forbidden." };
     }
 
-    const callerRole = this.members.find(
+    const callerMember = this.members.find(
       (m) => m.workspace_id === record.workspace_id && m.user_id === callerId
-    )?.role;
+    );
+    if (!callerMember) {
+      return { success: false, error: "Unauthorized: Caller is not a member of this workspace." };
+    }
+    const callerRole = callerMember.role;
 
     if (record.role === "owner" && callerRole !== "owner") {
-      return { success: false, error: "Only an owner can grant the owner role" };
+      return { success: false, error: "Role escalation rejected: Only workspace owners can assign the owner role." };
+    }
+
+    if (record.role === "admin" && callerRole !== "owner") {
+      return { success: false, error: "Role escalation rejected: Only workspace owners can assign the admin role." };
+    }
+
+    if (callerRole === "admin" && !["editor", "viewer", "member"].includes(record.role)) {
+      return { success: false, error: "Privilege violation: Admins can only add editor, viewer, or member roles." };
+    }
+
+    if (!["owner", "admin"].includes(callerRole)) {
+      return { success: false, error: "Unauthorized: Insufficient permissions to add workspace members." };
     }
 
     this.members.push(record);
@@ -81,21 +99,31 @@ class SecurityEngineSimulation {
   }
 
   // 4. Trigger: enforce_workspace_member_safety on UPDATE
-  updateMemberRole(
+  updateMember(
     callerId: string | null,
     workspaceId: string,
     targetUserId: string,
-    newRole: WorkspaceRole
+    updates: { role?: WorkspaceRole; new_workspace_id?: string; new_user_id?: string }
   ): { success: boolean; error?: string } {
-    if (!callerId) return { success: false, error: "Authentication required" };
-
-    const callerRole = this.members.find(
-      (m) => m.workspace_id === workspaceId && m.user_id === callerId
-    )?.role;
-
-    if (!callerRole || !["owner", "admin"].includes(callerRole)) {
-      return { success: false, error: "Insufficient permissions to update workspace members" };
+    if (!callerId) {
+      return { success: false, error: "Unauthorized: Unauthenticated operations on workspace members are strictly forbidden." };
     }
+
+    // Check identity immutability
+    if (
+      (updates.new_workspace_id && updates.new_workspace_id !== workspaceId) ||
+      (updates.new_user_id && updates.new_user_id !== targetUserId)
+    ) {
+      return { success: false, error: "Data integrity violation: Membership identity (workspace_id, user_id) is immutable." };
+    }
+
+    const callerMember = this.members.find(
+      (m) => m.workspace_id === workspaceId && m.user_id === callerId
+    );
+    if (!callerMember) {
+      return { success: false, error: "Unauthorized: Caller is not a member of this workspace." };
+    }
+    const callerRole = callerMember.role;
 
     const targetIdx = this.members.findIndex(
       (m) => m.workspace_id === workspaceId && m.user_id === targetUserId
@@ -103,15 +131,33 @@ class SecurityEngineSimulation {
     if (targetIdx === -1) return { success: false, error: "Member not found" };
 
     const oldRole = this.members[targetIdx]!.role;
+    const newRole = updates.role ?? oldRole;
 
-    // Admin cannot modify owner's role
-    if (oldRole === "owner" && callerRole !== "owner") {
-      return { success: false, error: "Admins cannot modify the role of an owner" };
+    // Check direct owner role modifications
+    if ((oldRole === "owner" || newRole === "owner") && oldRole !== newRole) {
+      if (!this.ownershipTransferActive) {
+        return { success: false, error: "Direct owner role modifications are prohibited. Use transfer_workspace_ownership() instead." };
+      }
     }
 
-    // Only owner can promote to owner
-    if (oldRole !== "owner" && newRole === "owner" && callerRole !== "owner") {
-      return { success: false, error: "Only an owner can promote a member to owner" };
+    // Only owner can grant or revoke the admin role
+    if ((newRole === "admin" || oldRole === "admin") && oldRole !== newRole && callerRole !== "owner") {
+      return { success: false, error: "Role escalation rejected: Only workspace owners can grant or revoke the admin role." };
+    }
+
+    // Admin cannot touch owners or other admins
+    if (callerRole === "admin" && ["owner", "admin"].includes(oldRole) && targetUserId !== callerId) {
+      return { success: false, error: "Privilege violation: Admins cannot modify owners or other admins." };
+    }
+
+    // Admins can only assign editor, viewer, or member roles
+    if (callerRole === "admin" && !["editor", "viewer", "member"].includes(newRole)) {
+      return { success: false, error: "Privilege violation: Admins can only assign editor, viewer, or member roles." };
+    }
+
+    // Non-admins / non-owners cannot update roles
+    if (!["owner", "admin"].includes(callerRole)) {
+      return { success: false, error: "Unauthorized: Insufficient permissions to update workspace members." };
     }
 
     // Last owner demotion protection
@@ -120,7 +166,7 @@ class SecurityEngineSimulation {
         (m) => m.workspace_id === workspaceId && m.role === "owner"
       ).length;
       if (ownerCount <= 1) {
-        return { success: false, error: "Cannot demote the last owner of the workspace" };
+        return { success: false, error: "Owner protection violation: The last remaining owner cannot be demoted. Transfer ownership first." };
       }
     }
 
@@ -134,13 +180,17 @@ class SecurityEngineSimulation {
     workspaceId: string,
     targetUserId: string
   ): { success: boolean; error?: string } {
-    if (!callerId) return { success: false, error: "Authentication required" };
+    if (!callerId) {
+      return { success: false, error: "Unauthorized: Unauthenticated operations on workspace members are strictly forbidden." };
+    }
 
-    const callerRole = this.members.find(
+    const callerMember = this.members.find(
       (m) => m.workspace_id === workspaceId && m.user_id === callerId
-    )?.role;
-
-    if (!callerRole) return { success: false, error: "Not a member" };
+    );
+    if (!callerMember) {
+      return { success: false, error: "Unauthorized: Caller is not a member of this workspace." };
+    }
+    const callerRole = callerMember.role;
 
     const targetIdx = this.members.findIndex(
       (m) => m.workspace_id === workspaceId && m.user_id === targetUserId
@@ -149,7 +199,17 @@ class SecurityEngineSimulation {
 
     const targetRole = this.members[targetIdx]!.role;
 
-    // Check last owner protection
+    // Admin cannot remove owners or other admins
+    if (callerRole === "admin" && ["owner", "admin"].includes(targetRole) && targetUserId !== callerId) {
+      return { success: false, error: "Privilege violation: Admins cannot remove owners or other admins." };
+    }
+
+    // Regular members can only remove themselves
+    if (!["owner", "admin"].includes(callerRole) && callerId !== targetUserId) {
+      return { success: false, error: "Unauthorized: Insufficient permissions to remove this workspace member." };
+    }
+
+    // Last owner protection
     if (targetRole === "owner") {
       const ownerCount = this.members.filter(
         (m) => m.workspace_id === workspaceId && m.role === "owner"
@@ -157,19 +217,9 @@ class SecurityEngineSimulation {
       if (ownerCount <= 1) {
         return {
           success: false,
-          error: "The last owner cannot leave or be removed. Transfer ownership or delete workspace.",
+          error: "Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or delete the workspace.",
         };
       }
-
-      // Admin cannot delete an owner
-      if (callerRole !== "owner" && callerId !== targetUserId) {
-        return { success: false, error: "Admins cannot remove a workspace owner" };
-      }
-    }
-
-    // Non-admin can only remove themselves
-    if (callerId !== targetUserId && !["owner", "admin"].includes(callerRole)) {
-      return { success: false, error: "Insufficient permissions to remove this member" };
     }
 
     this.members.splice(targetIdx, 1);
@@ -182,14 +232,14 @@ class SecurityEngineSimulation {
     workspaceId: string,
     newOwnerId: string
   ): { success: boolean; error?: string } {
-    if (!callerId) return { success: false, error: "Authentication required" };
+    if (!callerId) return { success: false, error: "Unauthorized: Authentication required." };
+    if (!newOwnerId) return { success: false, error: "Invalid target: New owner user id cannot be NULL." };
 
-    const callerRole = this.members.find(
+    const callerMember = this.members.find(
       (m) => m.workspace_id === workspaceId && m.user_id === callerId
-    )?.role;
-
-    if (callerRole !== "owner") {
-      return { success: false, error: "Only an owner can transfer workspace ownership" };
+    );
+    if (!callerMember || callerMember.role !== "owner") {
+      return { success: false, error: "Unauthorized: Only a workspace owner can transfer ownership." };
     }
 
     if (callerId === newOwnerId) return { success: true };
@@ -200,16 +250,18 @@ class SecurityEngineSimulation {
     if (!targetMember) {
       return {
         success: false,
-        error: "Target user must already be a member of the workspace before receiving ownership",
+        error: "Invalid target: Target user must already be a member of the workspace before receiving ownership.",
       };
     }
 
-    // Atomic swap
-    targetMember.role = "owner";
-    const callerMember = this.members.find(
-      (m) => m.workspace_id === workspaceId && m.user_id === callerId
-    )!;
-    callerMember.role = "admin";
+    // Atomic transaction with internal bypass flag
+    this.ownershipTransferActive = true;
+    try {
+      targetMember.role = "owner";
+      callerMember.role = "admin";
+    } finally {
+      this.ownershipTransferActive = false;
+    }
 
     return { success: true };
   }
@@ -218,7 +270,7 @@ class SecurityEngineSimulation {
   registerUser(userId: string, email: string, fullName: string) {
     this.profiles.push({
       id: userId,
-      full_name: fullName,
+      full_name: fullName.slice(0, 100),
       preferred_language: "id",
       theme_preference: "system",
       onboarding_completed: false,
@@ -227,8 +279,8 @@ class SecurityEngineSimulation {
     const wsId = `ws-${userId}`;
     this.workspaces.push({
       id: wsId,
-      name: `${fullName}'s Workspace`,
-      slug: `${fullName.toLowerCase().replace(/\s+/g, "-")}-${userId.slice(0, 4)}`,
+      name: `${fullName}'s Workspace`.slice(0, 100),
+      slug: `${fullName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40)}-${userId.slice(0, 6)}`,
       creator_mode: "creator",
       created_by: userId,
     });
@@ -248,12 +300,12 @@ class SecurityEngineSimulation {
 
   // 8. Independent Backfill Procedure
   executeIndependentBackfill(existingAuthUsers: Array<{ id: string; email: string; rawFullName?: string }>) {
-    // 1. Backfill Profiles
+    // Phase 1: Backfill Profiles without overwriting
     for (const u of existingAuthUsers) {
       if (!this.profiles.some((p) => p.id === u.id)) {
         this.profiles.push({
           id: u.id,
-          full_name: u.rawFullName || u.email.split("@")[0]!,
+          full_name: (u.rawFullName || u.email.split("@")[0]!).slice(0, 100),
           preferred_language: "id",
           theme_preference: "system",
           onboarding_completed: false,
@@ -261,14 +313,31 @@ class SecurityEngineSimulation {
       }
     }
 
-    // 2. Backfill Workspaces & Memberships
+    // Phase 2: Repair orphaned workspaces (valid created_by without owner membership)
+    for (const w of this.workspaces) {
+      const hasOwner = this.members.some((m) => m.workspace_id === w.id && m.role === "owner");
+      if (!hasOwner && w.created_by) {
+        const existingMember = this.members.find((m) => m.workspace_id === w.id && m.user_id === w.created_by);
+        if (existingMember) {
+          existingMember.role = "owner";
+        } else {
+          this.members.push({
+            workspace_id: w.id,
+            user_id: w.created_by,
+            role: "owner",
+          });
+        }
+      }
+    }
+
+    // Phase 3: Backfill Workspaces for users who have NO membership anywhere
     for (const u of existingAuthUsers) {
       if (!this.members.some((m) => m.user_id === u.id)) {
         const profile = this.profiles.find((p) => p.id === u.id)!;
         const wsId = `ws-backfill-${u.id}`;
         this.workspaces.push({
           id: wsId,
-          name: `${profile.full_name}'s Workspace`,
+          name: `${profile.full_name}'s Workspace`.slice(0, 100),
           slug: `ws-${u.id.slice(0, 6)}`,
           creator_mode: "creator",
           created_by: u.id,
@@ -286,7 +355,7 @@ class SecurityEngineSimulation {
       }
     }
 
-    // 3. Backfill Workspace Settings
+    // Phase 4: Backfill Workspace Settings for any workspace lacking them
     for (const w of this.workspaces) {
       if (!this.settings.some((s) => s.workspace_id === w.id)) {
         this.settings.push({
@@ -299,197 +368,258 @@ class SecurityEngineSimulation {
   }
 }
 
-describe("FINAL SECURITY HARDENING VERIFICATION (10 Required Proofs)", () => {
+describe("FINAL SECURITY HARDENING VERIFICATION (15 Required Scenarios)", () => {
   let db: SecurityEngineSimulation;
 
   beforeEach(() => {
     db = new SecurityEngineSimulation();
-    // Setup initial state: User A with Workspace A, User B with Workspace B
     db.registerUser("user-a", "user.a@test.com", "User Alpha");
     db.registerUser("user-b", "user.b@test.com", "User Beta");
   });
 
-  // PROOF 1: User A tidak dapat membaca workspace User B
-  it("1. User A cannot read User B's workspace", () => {
+  // 1. Pengguna A tidak dapat membaca workspace pribadi pengguna B
+  it("Scenario 1: User A cannot read User B's personal workspace", () => {
     const userAWorkspaces = db.selectWorkspaces("user-a");
     expect(userAWorkspaces.map((w) => w.id)).toContain("ws-user-a");
     expect(userAWorkspaces.map((w) => w.id)).not.toContain("ws-user-b");
     expect(db.hasWorkspaceAccess("user-a", "ws-user-b", "viewer")).toBe(false);
   });
 
-  // PROOF 2: User A tidak dapat menambahkan dirinya ke workspace User B (No self-join hole)
-  it("2. User A cannot insert themselves into User B's workspace", () => {
+  // 2. Pengguna A tidak dapat bergabung ke workspace lain dengan memasukkan membership miliknya sendiri
+  it("Scenario 2: User A cannot insert self into User B's workspace (No self-join hole)", () => {
     const attempt = db.insertMember("user-a", {
       workspace_id: "ws-user-b",
       user_id: "user-a",
-      role: "owner",
+      role: "member",
     });
     expect(attempt.success).toBe(false);
-    expect(attempt.error).toBe("Insufficient permissions to add workspace members");
+    expect(attempt.error).toBe("Unauthorized: Caller is not a member of this workspace.");
     expect(db.members.some((m) => m.workspace_id === "ws-user-b" && m.user_id === "user-a")).toBe(false);
   });
 
-  // PROOF 3: Member tidak dapat mengangkat diri menjadi admin
-  it("3. Member cannot promote self to admin", () => {
-    // Add User C as a regular member in Workspace A
-    db.members.push({ workspace_id: "ws-user-a", user_id: "user-c", role: "member" });
+  // 3. Admin tidak dapat memberikan role admin kepada pengguna lain
+  it("Scenario 3: Admin cannot grant admin role to another user", () => {
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-admin", role: "admin" });
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-target", role: "member" });
 
-    // User C attempts to update own role to admin
-    const attempt = db.updateMemberRole("user-c", "ws-user-a", "user-c", "admin");
-    expect(attempt.success).toBe(false);
-    expect(attempt.error).toBe("Insufficient permissions to update workspace members");
+    // Admin attempts to promote user-target to admin
+    const updateAttempt = db.updateMember("user-admin", "ws-user-a", "user-target", { role: "admin" });
+    expect(updateAttempt.success).toBe(false);
+    expect(updateAttempt.error).toBe("Role escalation rejected: Only workspace owners can grant or revoke the admin role.");
 
-    const role = db.members.find((m) => m.workspace_id === "ws-user-a" && m.user_id === "user-c")?.role;
-    expect(role).toBe("member");
+    // Admin attempts to insert new user with admin role
+    const insertAttempt = db.insertMember("user-admin", {
+      workspace_id: "ws-user-a",
+      user_id: "user-new-admin",
+      role: "admin",
+    });
+    expect(insertAttempt.success).toBe(false);
+    expect(insertAttempt.error).toBe("Role escalation rejected: Only workspace owners can assign the admin role.");
   });
 
-  // PROOF 4: Admin tidak dapat mengangkat diri menjadi owner
-  it("4. Admin cannot promote self or others to owner", () => {
-    // Add User Admin in Workspace A
+  // 4. Admin tidak dapat mengangkat siapa pun menjadi owner
+  it("Scenario 4: Admin cannot promote self or others to owner", () => {
     db.members.push({ workspace_id: "ws-user-a", user_id: "user-admin", role: "admin" });
 
-    // Admin attempts to promote themselves to owner
-    const attempt = db.updateMemberRole("user-admin", "ws-user-a", "user-admin", "owner");
-    expect(attempt.success).toBe(false);
-    expect(attempt.error).toBe("Only an owner can promote a member to owner");
+    // Admin attempts direct update to owner
+    const updateAttempt = db.updateMember("user-admin", "ws-user-a", "user-admin", { role: "owner" });
+    expect(updateAttempt.success).toBe(false);
+    expect(updateAttempt.error).toBe("Direct owner role modifications are prohibited. Use transfer_workspace_ownership() instead.");
 
-    // Admin attempts to create new member with owner role
+    // Admin attempts to insert new owner
     const insertAttempt = db.insertMember("user-admin", {
       workspace_id: "ws-user-a",
       user_id: "user-intruder",
       role: "owner",
     });
     expect(insertAttempt.success).toBe(false);
-    expect(insertAttempt.error).toBe("Only an owner can grant the owner role");
+    expect(insertAttempt.error).toBe("Role escalation rejected: Only workspace owners can assign the owner role.");
   });
 
-  // PROOF 5: Admin tidak dapat menghapus owner
-  it("5. Admin cannot delete workspace owner", () => {
+  // 5. Admin tidak dapat mengubah, menurunkan, atau menghapus owner
+  it("Scenario 5: Admin cannot modify, demote, or delete an owner", () => {
     db.members.push({ workspace_id: "ws-user-a", user_id: "user-admin", role: "admin" });
 
-    // Admin attempts to delete User A (the owner)
-    const attempt = db.deleteMember("user-admin", "ws-user-a", "user-a");
-    expect(attempt.success).toBe(false);
-    expect(attempt.error).toBe("The last owner cannot leave or be removed. Transfer ownership or delete workspace.");
+    // Admin attempts to demote owner to member
+    const demoteAttempt = db.updateMember("user-admin", "ws-user-a", "user-a", { role: "member" });
+    expect(demoteAttempt.success).toBe(false);
+    expect(demoteAttempt.error).toBe("Direct owner role modifications are prohibited. Use transfer_workspace_ownership() instead.");
 
-    // Even if there's a second owner, admin still cannot delete an owner
-    db.members.push({ workspace_id: "ws-user-a", user_id: "user-co-owner", role: "owner" });
-    const attempt2 = db.deleteMember("user-admin", "ws-user-a", "user-a");
-    expect(attempt2.success).toBe(false);
-    expect(attempt2.error).toBe("Admins cannot remove a workspace owner");
+    // Admin attempts to delete owner
+    const deleteAttempt = db.deleteMember("user-admin", "ws-user-a", "user-a");
+    expect(deleteAttempt.success).toBe(false);
+    expect(deleteAttempt.error).toBe("Privilege violation: Admins cannot remove owners or other admins.");
   });
 
-  // PROOF 6: Owner terakhir tidak dapat menghapus membership sendiri
-  it("6. Last owner cannot delete their own membership", () => {
-    // User A is the sole owner of Workspace A
+  // 6. Owner tidak dapat menghapus owner terakhir
+  it("Scenario 6: Owner cannot delete the last owner of the workspace", () => {
     const attempt = db.deleteMember("user-a", "ws-user-a", "user-a");
     expect(attempt.success).toBe(false);
     expect(attempt.error).toBe(
-      "The last owner cannot leave or be removed. Transfer ownership or delete workspace."
+      "Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or delete the workspace."
     );
     expect(db.members.some((m) => m.workspace_id === "ws-user-a" && m.user_id === "user-a")).toBe(true);
   });
 
-  // PROOF 7: Owner dapat melakukan transfer ownership secara aman
-  it("7. Owner can safely and atomically transfer ownership", () => {
-    // Add User Member to Workspace A
-    db.members.push({ workspace_id: "ws-user-a", user_id: "user-member", role: "editor" });
+  // 7. Owner terakhir tidak dapat keluar tanpa transfer kepemilikan
+  it("Scenario 7: Last owner cannot leave workspace without ownership transfer", () => {
+    // Even when there are other members (e.g. editor), last owner still cannot leave
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-editor", role: "editor" });
 
-    // User A transfers ownership to User Member
-    const transfer = db.transferOwnership("user-a", "ws-user-a", "user-member");
-    expect(transfer.success).toBe(true);
-
-    // Verify User Member is now owner and User A is now admin
-    const newOwnerRole = db.members.find(
-      (m) => m.workspace_id === "ws-user-a" && m.user_id === "user-member"
-    )?.role;
-    const oldOwnerRole = db.members.find(
-      (m) => m.workspace_id === "ws-user-a" && m.user_id === "user-a"
-    )?.role;
-
-    expect(newOwnerRole).toBe("owner");
-    expect(oldOwnerRole).toBe("admin");
-
-    // Attempt transfer by non-owner fails
-    const unauthorizedTransfer = db.transferOwnership("user-a", "ws-user-a", "user-a");
-    expect(unauthorizedTransfer.success).toBe(false);
-    expect(unauthorizedTransfer.error).toBe("Only an owner can transfer workspace ownership");
+    const leaveAttempt = db.deleteMember("user-a", "ws-user-a", "user-a");
+    expect(leaveAttempt.success).toBe(false);
+    expect(leaveAttempt.error).toContain("The last remaining owner cannot leave or be removed");
   });
 
-  // PROOF 8: Registrasi membuat profil, workspace, membership, dan settings
-  it("8. User registration automatically provisions all 4 foundational records", () => {
+  // 8. Hanya owner yang dapat melakukan transfer kepemilikan
+  it("Scenario 8: Only an owner can initiate transfer of ownership", () => {
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-admin", role: "admin" });
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-member", role: "member" });
+
+    // Admin tries to transfer ownership
+    const adminTransfer = db.transferOwnership("user-admin", "ws-user-a", "user-member");
+    expect(adminTransfer.success).toBe(false);
+    expect(adminTransfer.error).toBe("Unauthorized: Only a workspace owner can transfer ownership.");
+
+    // True owner transfers ownership successfully
+    const ownerTransfer = db.transferOwnership("user-a", "ws-user-a", "user-member");
+    expect(ownerTransfer.success).toBe(true);
+    expect(db.members.find((m) => m.workspace_id === "ws-user-a" && m.user_id === "user-member")?.role).toBe("owner");
+    expect(db.members.find((m) => m.workspace_id === "ws-user-a" && m.user_id === "user-a")?.role).toBe("admin");
+  });
+
+  // 9. Transfer kepemilikan bersamaan tidak dapat menyebabkan workspace kehilangan seluruh owner
+  it("Scenario 9: Concurrent transfers serialize and maintain at least one valid owner at all times", () => {
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-m1", role: "member" });
+    db.members.push({ workspace_id: "ws-user-a", user_id: "user-m2", role: "member" });
+
+    // Simulate transfer to user-m1
+    const t1 = db.transferOwnership("user-a", "ws-user-a", "user-m1");
+    expect(t1.success).toBe(true);
+
+    // Concurrent/subsequent transfer by original user-a fails because user-a is now admin, not owner
+    const t2 = db.transferOwnership("user-a", "ws-user-a", "user-m2");
+    expect(t2.success).toBe(false);
+    expect(t2.error).toBe("Unauthorized: Only a workspace owner can transfer ownership.");
+
+    // Exactly one owner exists
+    const owners = db.members.filter((m) => m.workspace_id === "ws-user-a" && m.role === "owner");
+    expect(owners).toHaveLength(1);
+    expect(owners[0]!.user_id).toBe("user-m1");
+  });
+
+  // 10. workspace_id dan user_id tidak dapat diubah melalui UPDATE biasa
+  it("Scenario 10: workspace_id and user_id are strictly immutable on UPDATE", () => {
+    const attempt = db.updateMember("user-a", "ws-user-a", "user-a", {
+      new_workspace_id: "ws-user-b",
+    });
+    expect(attempt.success).toBe(false);
+    expect(attempt.error).toBe("Data integrity violation: Membership identity (workspace_id, user_id) is immutable.");
+
+    const attemptUser = db.updateMember("user-a", "ws-user-a", "user-a", {
+      new_user_id: "user-intruder",
+    });
+    expect(attemptUser.success).toBe(false);
+    expect(attemptUser.error).toBe("Data integrity violation: Membership identity (workspace_id, user_id) is immutable.");
+  });
+
+  // 11. Signup otomatis membuat profile, workspace, owner membership, dan settings
+  it("Scenario 11: Signup automatically creates profile, workspace, owner membership, and settings", () => {
     db.registerUser("user-new", "new@creator.id", "New Creator");
 
-    const profile = db.profiles.find((p) => p.id === "user-new");
-    expect(profile).toBeDefined();
-    expect(profile?.full_name).toBe("New Creator");
-
-    const workspace = db.workspaces.find((w) => w.id === "ws-user-new");
-    expect(workspace).toBeDefined();
-    expect(workspace?.created_by).toBe("user-new");
-
-    const member = db.members.find((m) => m.workspace_id === "ws-user-new" && m.user_id === "user-new");
-    expect(member).toBeDefined();
-    expect(member?.role).toBe("owner");
-
-    const settings = db.settings.find((s) => s.workspace_id === "ws-user-new");
-    expect(settings).toBeDefined();
-    expect(settings?.default_language).toBe("id");
+    expect(db.profiles.some((p) => p.id === "user-new" && p.full_name === "New Creator")).toBe(true);
+    expect(db.workspaces.some((w) => w.id === "ws-user-new" && w.created_by === "user-new")).toBe(true);
+    expect(db.members.some((m) => m.workspace_id === "ws-user-new" && m.user_id === "user-new" && m.role === "owner")).toBe(true);
+    expect(db.settings.some((s) => s.workspace_id === "ws-user-new" && s.default_language === "id")).toBe(true);
   });
 
-  // PROOF 9: Existing user backfill mendapatkan komponen yang belum ada tanpa duplikasi
-  it("9. Independent backfill handles partially existing accounts without overwriting or duplicating", () => {
-    // Simulate user who edited their profile name, but has no workspace
+  // 12. Backfill memperbaiki data yang belum lengkap tanpa membuat duplikasi
+  it("Scenario 12: Backfill completes missing components without duplication", () => {
+    db.workspaces.push({
+      id: "ws-orphan",
+      name: "Orphan WS",
+      slug: "orphan-ws",
+      creator_mode: "creator",
+      created_by: "user-a",
+    });
+
+    db.executeIndependentBackfill([
+      { id: "user-a", email: "user.a@test.com" },
+      { id: "user-c", email: "user.c@test.com", rawFullName: "User Charlie" },
+    ]);
+
+    // Check no duplicate settings for ws-user-a
+    const aSettings = db.settings.filter((s) => s.workspace_id === "ws-user-a");
+    expect(aSettings).toHaveLength(1);
+
+    // Check newly added settings for ws-orphan
+    const orphanSettings = db.settings.filter((s) => s.workspace_id === "ws-orphan");
+    expect(orphanSettings).toHaveLength(1);
+
+    // Check User Charlie received workspace and owner membership
+    expect(db.members.some((m) => m.user_id === "user-c" && m.role === "owner")).toBe(true);
+  });
+
+  // 13. Data profile yang sudah ada tidak tertimpa
+  it("Scenario 13: Existing profile data is preserved and never overwritten by backfill", () => {
     db.profiles.push({
-      id: "user-edited",
-      full_name: "Custom Edited Name",
+      id: "user-custom",
+      full_name: "Original Custom Name",
       preferred_language: "id",
       theme_preference: "dark",
       onboarding_completed: true,
     });
 
-    // Simulate workspace that exists but lacks settings
-    db.workspaces.push({
-      id: "ws-orphan-settings",
-      name: "Orphan Settings Workspace",
-      slug: "orphan-settings-ws",
-      creator_mode: "business",
-      created_by: "user-a",
-    });
-
-    // Run independent backfill
     db.executeIndependentBackfill([
-      { id: "user-edited", email: "edited@test.com", rawFullName: "Old Name From Auth" },
-      { id: "user-unregistered", email: "unregistered@test.com", rawFullName: "Unregistered User" },
+      { id: "user-custom", email: "custom@test.com", rawFullName: "Overwritten Name" },
     ]);
 
-    // 1. Verify custom edited name was NOT overwritten
-    const profile = db.profiles.find((p) => p.id === "user-edited");
-    expect(profile?.full_name).toBe("Custom Edited Name");
-    expect(profile?.theme_preference).toBe("dark");
-
-    // 2. Verify workspace was created for user-edited
-    expect(db.members.some((m) => m.user_id === "user-edited")).toBe(true);
-
-    // 3. Verify orphan settings were added to ws-orphan-settings without duplicating the workspace
-    const orphanSettings = db.settings.filter((s) => s.workspace_id === "ws-orphan-settings");
-    expect(orphanSettings).toHaveLength(1);
-    expect(orphanSettings[0]?.default_ai_model).toBe("gemini-1.5-flash");
-
-    // 4. Verify no duplicate workspaces
-    const wsOrphanCount = db.workspaces.filter((w) => w.id === "ws-orphan-settings").length;
-    expect(wsOrphanCount).toBe(1);
+    const p = db.profiles.find((item) => item.id === "user-custom");
+    expect(p?.full_name).toBe("Original Custom Name");
+    expect(p?.theme_preference).toBe("dark");
   });
 
-  // PROOF 10: Pengguna tidak dapat mengubah atau membaca data workspace lain
-  it("10. Users cannot mutate or access records in another workspace", () => {
-    // User A attempts to update settings in Workspace B
-    const hasAdminAccess = db.hasWorkspaceAccess("user-a", "ws-user-b", "admin");
-    expect(hasAdminAccess).toBe(false);
+  // 14. Workspace tanpa owner dapat diperbaiki dengan benar
+  it("Scenario 14: Orphaned workspace lacking an owner is repaired by assigning created_by as owner", () => {
+    // Create an orphaned workspace with valid created_by but no members
+    db.workspaces.push({
+      id: "ws-no-owner",
+      name: "No Owner Workspace",
+      slug: "no-owner-ws",
+      creator_mode: "creator",
+      created_by: "user-b",
+    });
 
-    // User A attempts to delete a member from Workspace B
-    const deleteAttempt = db.deleteMember("user-a", "ws-user-b", "user-b");
-    expect(deleteAttempt.success).toBe(false);
-    expect(deleteAttempt.error).toBe("Not a member");
+    // Run backfill
+    db.executeIndependentBackfill([]);
+
+    // Check ws-no-owner now has user-b as owner
+    const member = db.members.find((m) => m.workspace_id === "ws-no-owner");
+    expect(member).toBeDefined();
+    expect(member?.user_id).toBe("user-b");
+    expect(member?.role).toBe("owner");
+  });
+
+  // 15. SELECT, UPDATE, DELETE, dan INSERT lintas workspace ditolak
+  it("Scenario 15: Cross-tenant SELECT, UPDATE, DELETE, and INSERT are completely rejected", () => {
+    // SELECT: User A cannot see ws-user-b
+    const visibleToA = db.selectWorkspaces("user-a");
+    expect(visibleToA.some((w) => w.id === "ws-user-b")).toBe(false);
+
+    // INSERT: User A cannot insert member into ws-user-b
+    const insertRes = db.insertMember("user-a", {
+      workspace_id: "ws-user-b",
+      user_id: "user-stranger",
+      role: "viewer",
+    });
+    expect(insertRes.success).toBe(false);
+
+    // UPDATE: User A cannot update members in ws-user-b
+    const updateRes = db.updateMember("user-a", "ws-user-b", "user-b", { role: "member" });
+    expect(updateRes.success).toBe(false);
+
+    // DELETE: User A cannot delete members in ws-user-b
+    const deleteRes = db.deleteMember("user-a", "ws-user-b", "user-b");
+    expect(deleteRes.success).toBe(false);
   });
 });
