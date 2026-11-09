@@ -1,12 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
+import { isValidUuid } from "@/lib/security/sanitize";
 import type { Profile } from "@/lib/supabase/types";
 import type { UpdateProfileInput } from "@/lib/validation/auth-schemas";
 
 export class ProfileService {
   /**
-   * Retrieves profile by user ID
+   * Retrieves profile by verified user ID
    */
   static async getProfile(userId: string): Promise<Profile | null> {
+    if (!isValidUuid(userId)) {
+      return null;
+    }
+
     const supabase = await createClient();
 
     const { data, error } = await supabase
@@ -23,12 +28,16 @@ export class ProfileService {
   }
 
   /**
-   * Updates profile data
+   * Updates caller's own profile data
    */
   static async updateProfile(
     userId: string,
     input: UpdateProfileInput
   ): Promise<{ success: boolean; profile?: Profile; error?: string }> {
+    if (!isValidUuid(userId)) {
+      return { success: false, error: "Identitas pengguna tidak valid." };
+    }
+
     const supabase = await createClient();
 
     const { data, error } = await supabase
@@ -37,14 +46,13 @@ export class ProfileService {
         full_name: input.fullName,
         preferred_language: input.preferredLanguage,
         theme_preference: input.themePreference,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", userId)
       .select()
       .single();
 
     if (error || !data) {
-      return { success: false, error: error?.message || "Gagal memperbarui profil" };
+      return { success: false, error: "Gagal memperbarui profil pengguna." };
     }
 
     return { success: true, profile: data as Profile };

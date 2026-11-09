@@ -1,47 +1,80 @@
 import * as React from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { redirect } from "next/navigation";
+import { AuthService } from "@/services/auth-service";
+import { WorkspaceService } from "@/services/workspace-service";
+import { CreatorContextService } from "@/services/creator-context-service";
+import { NicheDiscoveryService } from "@/services/niche-discovery-service";
+import { UsageBillingService } from "@/services/usage-billing-service";
+import { getValidatedActiveWorkspaceId } from "@/lib/security/workspace-cookie";
+import { getProviderAvailability } from "@/lib/ai/provider-registry";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/ui/empty-state";
-import { Compass, Sparkles } from "lucide-react";
+import { NicheDiscoveryWorkspace } from "@/features/niche-discovery/components/niche-discovery-workspace";
 
-export default function NicheDiscoveryPage() {
+export default async function NicheDiscoveryPage() {
+  const user = await AuthService.getCurrentUser();
+  if (!user) {
+    redirect("/sign-in");
+  }
+
+  const [workspaces, activeCookieWsId] = await Promise.all([
+    WorkspaceService.getWorkspacesForUser(user.id),
+    getValidatedActiveWorkspaceId(),
+  ]);
+
+  const currentWorkspace =
+    workspaces.find((w) => w.id === activeCookieWsId) ?? workspaces[0];
+
+  if (!currentWorkspace) {
+    redirect("/dashboard");
+  }
+
+  const [creatorContext, recommendations, wallet] = await Promise.all([
+    CreatorContextService.getWorkspaceCreatorContext(
+      currentWorkspace.id,
+      user.id
+    ),
+    NicheDiscoveryService.listRecommendations(currentWorkspace.id, user.id),
+    UsageBillingService.getWorkspaceCreditBalance(currentWorkspace.id, user.id),
+  ]);
+
+  const providerStatus = getProviderAvailability();
+  const canEdit =
+    currentWorkspace.role === "owner" ||
+    currentWorkspace.role === "admin" ||
+    currentWorkspace.role === "editor";
+
+  const selected = recommendations.find((r) => r.isSelected);
+
   return (
-    <div className="space-y-6 max-w-4xl animate-in fade-in-50 duration-300">
-      <div className="flex items-center justify-between border-b border-border pb-4">
+    <div className="space-y-6 animate-in fade-in-50 duration-300">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
               Niche Discovery & Market Fit
             </h1>
-            <Badge variant="comingSoon" className="text-xs">
-              Fase 2 Pipeline
+            <Badge
+              variant={selected ? "success" : "secondary"}
+              className="text-xs"
+            >
+              {selected
+                ? `Niche Aktif: ${selected.nicheTitle}`
+                : "Pilih Niche Utama"}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Temukan ceruk pasar potensial dengan algoritma evaluasi demand dan kompetisi.
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Evaluasi kandidat niche terstruktur berdasarkan profil keahlian, peluang konten, kompetisi kualitatif, dan jalur monetisasi realistis.
           </p>
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Compass className="h-5 w-5 text-primary" />
-            <CardTitle className="text-base font-semibold">Discovery Engine</CardTitle>
-          </div>
-          <CardDescription className="text-xs">
-            Modul analisis niche berbasis data pasar nyata akan diaktifkan pada Fase 2.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <EmptyState
-            icon={Sparkles}
-            title="Niche Discovery Engine"
-            description="Algoritma scoring demand, densitas kompetitor, dan estimasi potensi monetisasi niche sedang disiapkan untuk Fase 2."
-            className="p-12"
-          />
-        </CardContent>
-      </Card>
+      <NicheDiscoveryWorkspace
+        context={creatorContext}
+        initialRecommendations={recommendations}
+        canEdit={canEdit}
+        aiConfigured={providerStatus.anyConfigured}
+        creditBalance={wallet.balance}
+      />
     </div>
   );
 }

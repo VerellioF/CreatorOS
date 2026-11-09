@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
 import { signInAction } from "@/features/auth/actions";
+import { sanitizeRedirectPath } from "@/lib/security/sanitize";
 import { toast } from "sonner";
 import { ArrowRight, Lock, Mail } from "lucide-react";
 
 export function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") || "/dashboard";
+  const redirectTo = sanitizeRedirectPath(searchParams.get("redirectTo"), "/dashboard");
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");

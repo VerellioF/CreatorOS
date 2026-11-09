@@ -1,10 +1,20 @@
 import * as React from "react";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { AuthService } from "@/services/auth-service";
 import { ProfileService } from "@/services/profile-service";
 import { WorkspaceService } from "@/services/workspace-service";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { CreatorContextService } from "@/services/creator-context-service";
+import { StrategyService } from "@/services/strategy-service";
+import { ContentEngineService } from "@/services/content-engine-service";
+import { getValidatedActiveWorkspaceId } from "@/lib/security/workspace-cookie";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -13,24 +23,45 @@ import {
   CheckCircle2,
   Circle,
   ArrowRight,
-  TrendingUp,
   FileText,
   Compass,
   Layers,
   Calendar,
+  Dna,
 } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await AuthService.getCurrentUser();
-  const profile = user ? await ProfileService.getProfile(user.id) : null;
-  const workspaces = user ? await WorkspaceService.getWorkspacesForUser(user.id) : [];
+  if (!user) {
+    redirect("/sign-in");
+  }
 
-  const cookieStore = await cookies();
-  const activeWorkspaceId = cookieStore.get("active_workspace_id")?.value;
+  const [profile, workspaces, activeWorkspaceId] = await Promise.all([
+    ProfileService.getProfile(user.id),
+    WorkspaceService.getWorkspacesForUser(user.id),
+    getValidatedActiveWorkspaceId(),
+  ]);
+
   const currentWorkspace =
     workspaces.find((w) => w.id === activeWorkspaceId) || workspaces[0];
 
-  const userName = profile?.full_name || user?.email?.split("@")[0] || "Creator";
+  const [creatorContext, strategies, contentPackages] = currentWorkspace
+    ? await Promise.all([
+        CreatorContextService.getWorkspaceCreatorContext(
+          currentWorkspace.id,
+          user.id
+        ),
+        StrategyService.listStrategiesWithPillars(currentWorkspace.id, user.id),
+        ContentEngineService.listContentPackages(currentWorkspace.id, user.id),
+      ])
+    : [null, [], []];
+
+  const activeStrategy =
+    strategies.find((s) => s.isActive) ?? strategies[0] ?? null;
+  const activePillars = activeStrategy?.pillars ?? [];
+
+  const userName =
+    profile?.full_name || user?.email?.split("@")[0] || "Creator";
   const creatorMode = currentWorkspace?.creator_mode || "creator";
 
   const modeLabels: Record<string, string> = {
@@ -40,58 +71,74 @@ export default async function DashboardPage() {
     personal_brand: "Personal Brand Mode (Expertise & Authority)",
   };
 
-  // Real onboarding checklist items
+  const hasDna = Boolean(creatorContext?.creatorDna);
+  const hasSelectedNiche = Boolean(creatorContext?.selectedNiche);
+  const roadmapTasks = creatorContext?.roadmap30Days.flatMap((w) => w.tasks) ?? [];
+  const completedRoadmapTasks = roadmapTasks.filter((t) => t.completed).length;
+
   const onboardingSteps = [
     {
       id: "profile",
-      title: "Lengkapi Profil & Creator DNA",
-      description: "Tentukan tone of voice, kepribadian konten, dan topik utama Anda.",
+      title: "Wawancara Onboarding Adaptif & Creator DNA",
+      description:
+        "Sintesiskan arketipe konten, tone of voice, persona audiens, dan roadmap 30 hari.",
       href: "/creator-profile",
-      completed: profile?.onboarding_completed || false,
+      completed: Boolean(profile?.onboarding_completed || hasDna),
+      isComingSoon: false,
     },
     {
       id: "niche",
-      title: "Validasi Niche & Target Audiens",
-      description: "Temukan sweet spot niche dengan kompetisi seimbang dan demand tinggi.",
+      title: "Validasi & Pilih Niche Utama",
+      description:
+        "Bandingkan peluang konten, kompetisi kualitatif, dan pilih niche utama workspace.",
       href: "/niche-discovery",
-      completed: false,
+      completed: hasSelectedNiche,
+      isComingSoon: false,
     },
     {
       id: "strategy",
-      title: "Buat Pilar Konten Pertama",
-      description: "Rancang 3-5 tema utama untuk menjaga konsistensi publikasi Anda.",
+      title: "Buat Pilar Konten & Riset Berbasis Bukti",
+      description:
+        "Rancang positioning konten dan pilar strategi berbasis laporan riset terverifikasi.",
       href: "/strategy",
-      completed: false,
-      isComingSoon: true,
+      completed: activePillars.length > 0,
+      isComingSoon: false,
     },
     {
       id: "script",
-      title: "Tulis Script dengan Framework Teruji",
-      description: "Hasilkan naskah video pendek 30-60 detik dengan formula hook kuat.",
+      title: "Tulis & Adaptasikan Paket Naskah Platform",
+      description:
+        "Hasilkan dan sunting hooks, script, caption, CTA, hashtag, serta adaptasi lintas platform.",
       href: "/studio/scripts",
-      completed: false,
-      isComingSoon: true,
+      completed: contentPackages.length > 0,
+      isComingSoon: false,
     },
   ];
 
   const completedCount = onboardingSteps.filter((s) => s.completed).length;
-  const progressPercent = Math.round((completedCount / onboardingSteps.length) * 100);
+  const progressPercent = Math.round(
+    (completedCount / onboardingSteps.length) * 100
+  );
 
   return (
     <div className="space-y-8 animate-in fade-in-50 duration-300">
       {/* 1. Welcome Header */}
       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between border-b border-border pb-6">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex flex-wrap items-center gap-2 mb-1">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Selamat Datang, {userName}! 👋
+              Selamat Datang, {userName}!
             </h1>
             <Badge variant="outline" className="capitalize text-xs font-semibold">
               {modeLabels[creatorMode] || creatorMode}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground">
-            Workspace: <span className="font-semibold text-foreground">{currentWorkspace?.name}</span>. Mari bangun konsistensi kreasi konten Anda.
+            Workspace:{" "}
+            <span className="font-semibold text-foreground">
+              {currentWorkspace?.name}
+            </span>
+            . Mari bangun konsistensi kreasi konten Anda secara terukur.
           </p>
         </div>
 
@@ -99,29 +146,31 @@ export default async function DashboardPage() {
           <Link href="/creator-profile">
             <Button size="sm" className="gap-1.5 shadow-sm">
               <Sparkles className="h-4 w-4" />
-              <span>Mulai Onboarding Creator</span>
+              <span>
+                {hasDna ? "Kelola Creator DNA" : "Mulai Onboarding Creator"}
+              </span>
             </Button>
           </Link>
         </div>
       </div>
 
-      {/* 2. Primary Recommended Action & Setup Progress */}
+      {/* 2. Setup Progress & Active Creator Intelligence Card */}
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Progress Card */}
         <Card className="md:col-span-2 border-border/80 bg-card/60 backdrop-blur-sm">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-base font-semibold">Creator Setup Progress</CardTitle>
+                <CardTitle className="text-base font-semibold">
+                  Creator Setup Progress
+                </CardTitle>
                 <CardDescription className="text-xs">
-                  Selesaikan 4 langkah fondasi untuk mengaktifkan AI Creator Engine Anda.
+                  Fondasi Creator Intelligence digunakan ulang secara otomatis di seluruh modul AI.
                 </CardDescription>
               </div>
               <span className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-md">
                 {progressPercent}% Selesai
               </span>
             </div>
-            {/* Progress Bar */}
             <div className="w-full bg-muted rounded-full h-1.5 mt-3 overflow-hidden">
               <div
                 className="bg-primary h-1.5 rounded-full transition-all duration-500"
@@ -151,7 +200,7 @@ export default async function DashboardPage() {
                       </span>
                       {step.isComingSoon && (
                         <Badge variant="comingSoon" className="text-[9px] px-1.5 py-0">
-                          Phase 2
+                          Fase 3+
                         </Badge>
                       )}
                     </div>
@@ -178,21 +227,48 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        {/* Quick Launch Card */}
-        <Card className="border-primary/20 bg-gradient-to-b from-primary/5 to-transparent">
+        {/* Active Creator DNA / Niche Quick Card */}
+        <Card className="border-primary/20 bg-gradient-to-b from-primary/5 to-transparent flex flex-col justify-between">
           <CardHeader>
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary mb-2">
-              <Compass className="h-5 w-5" />
+              {hasDna ? (
+                <Dna className="h-5 w-5" />
+              ) : (
+                <Compass className="h-5 w-5" />
+              )}
             </div>
-            <CardTitle className="text-base font-semibold">Niche Discovery</CardTitle>
+            <CardTitle className="text-base font-semibold">
+              {creatorContext?.creatorDna
+                ? creatorContext.creatorDna.creatorName
+                : "Niche Discovery Engine"}
+            </CardTitle>
             <CardDescription className="text-xs leading-relaxed">
-              Bingung mulai dari mana? Temukan niche yang sesuai dengan minat, keahlian, dan potensi monetisasi Anda.
+              {creatorContext?.creatorDna ? (
+                <>
+                  <strong>Niche Utama:</strong>{" "}
+                  {creatorContext.creatorDna.primaryNiche}
+                  <br />
+                  <strong>Arketipe:</strong>{" "}
+                  {creatorContext.creatorDna.personalityArchetype}
+                  {roadmapTasks.length > 0 && (
+                    <>
+                      <br />
+                      <strong>Roadmap 30 Hari:</strong> {completedRoadmapTasks}/
+                      {roadmapTasks.length} tugas selesai
+                    </>
+                  )}
+                </>
+              ) : (
+                "Temukan ceruk konten yang selaras dengan minat, keahlian, ketersediaan waktu, dan potensi monetisasi realistis Anda."
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Link href="/niche-discovery">
+            <Link href={hasDna ? "/niche-discovery" : "/creator-profile"}>
               <Button variant="default" size="sm" className="w-full gap-2 text-xs">
-                <span>Eksplorasi Niche</span>
+                <span>
+                  {hasDna ? "Eksplorasi & Pilih Niche" : "Mulai Wawancara Adaptif"}
+                </span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </Link>
@@ -200,61 +276,131 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* 3. Operational Overview & Activity Empty States (Rule 1 & 3 compliant) */}
+      {/* 3. Operational Overview */}
       <div className="space-y-4">
         <h3 className="text-base font-semibold text-foreground tracking-tight">
           Aktivitas Konten Workspace
         </h3>
 
         <div className="grid gap-4 md:grid-cols-3">
-          {/* Recent Scripts Empty State */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-primary" />
-                <CardTitle className="text-xs font-semibold">Naskah Terakhir</CardTitle>
+                <CardTitle className="text-xs font-semibold">
+                  Naskah Terakhir
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent>
-              <EmptyState
-                title="Belum Ada Naskah"
-                description="Script Studio akan diaktifkan di Fase 4 untuk penulisan skrip otomatis."
-                className="p-4"
-              />
+              {contentPackages.length > 0 ? (
+                <div className="space-y-2 text-xs p-2">
+                  <div className="font-semibold text-foreground line-clamp-1">
+                    {contentPackages[0].title}
+                  </div>
+                  <p className="text-muted-foreground text-[11px] uppercase">
+                    Platform: {contentPackages[0].primaryPlatform} ·{" "}
+                    {contentPackages.length} total paket
+                  </p>
+                  <Link href="/studio/scripts">
+                    <Button variant="outline" size="sm" className="text-xs mt-1">
+                      Buka Script Studio
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <EmptyState
+                    title="Belum Ada Naskah"
+                    description="Buat paket konten (hook, naskah, caption, CTA, hashtag) di Script Studio."
+                    className="p-4"
+                  />
+                  <div className="px-4 pb-2">
+                    <Link href="/studio/scripts">
+                      <Button variant="outline" size="sm" className="w-full text-xs">
+                        Buka Script Studio
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Content Strategy Empty State */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Layers className="h-4 w-4 text-primary" />
-                <CardTitle className="text-xs font-semibold">Pilar Strategi</CardTitle>
+                <CardTitle className="text-xs font-semibold">
+                  Pilar Strategi
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent>
-              <EmptyState
-                title="Belum Ada Pilar"
-                description="Pilar konten akan dirancang di Fase 3 bersama Strategist Agent."
-                className="p-4"
-              />
+              {activePillars.length > 0 ? (
+                <div className="space-y-2 text-xs p-2">
+                  <div className="font-semibold text-foreground">
+                    {activePillars.length} pilar aktif
+                  </div>
+                  <p className="text-muted-foreground text-[11px] line-clamp-2">
+                    {activePillars.map((p) => p.name).join(" · ")}
+                  </p>
+                  <Link href="/strategy">
+                    <Button variant="outline" size="sm" className="text-xs mt-1">
+                      Kelola Pilar
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <EmptyState
+                    title="Belum Ada Pilar"
+                    description="Rancang pilar konten yang dapat disunting di modul Content Strategy."
+                    className="p-4"
+                  />
+                  <div className="px-4 pb-2">
+                    <Link href="/strategy">
+                      <Button variant="outline" size="sm" className="w-full text-xs">
+                        Buat Strategi
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
-          {/* Publishing Calendar Empty State */}
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary" />
-                <CardTitle className="text-xs font-semibold">Jadwal Publikasi</CardTitle>
+                <CardTitle className="text-xs font-semibold">
+                  Roadmap 30 Hari
+                </CardTitle>
               </div>
             </CardHeader>
             <CardContent>
-              <EmptyState
-                title="Kalender Kosong"
-                description="Jadwal publikasi multi-platform akan aktif di Fase 6."
-                className="p-4"
-              />
+              {roadmapTasks.length > 0 ? (
+                <div className="space-y-2 text-xs p-2">
+                  <div className="font-semibold text-foreground">
+                    {completedRoadmapTasks} dari {roadmapTasks.length} aksi selesai
+                  </div>
+                  <p className="text-muted-foreground text-[11px]">
+                    Minggu 1: {creatorContext?.roadmap30Days[0]?.theme}
+                  </p>
+                  <Link href="/creator-profile">
+                    <Button variant="outline" size="sm" className="text-xs mt-1">
+                      Buka Roadmap
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <EmptyState
+                  title="Roadmap Belum Dibuat"
+                  description="Selesaikan onboarding di Creator Profile untuk menyimpan roadmap 30 hari."
+                  className="p-4"
+                />
+              )}
             </CardContent>
           </Card>
         </div>

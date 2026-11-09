@@ -5,6 +5,7 @@ import { LogOut, Settings, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { signOutAction } from "@/features/auth/actions";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -27,7 +28,7 @@ export function UserNav({ user }: UserNavProps) {
     setIsLoggingOut(true);
     try {
       const supabase = createClient();
-      await supabase.auth.signOut();
+      await Promise.allSettled([supabase.auth.signOut(), signOutAction()]);
       toast.success("Berhasil keluar");
       router.push("/sign-in");
       router.refresh();

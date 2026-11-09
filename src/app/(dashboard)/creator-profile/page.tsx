@@ -1,88 +1,88 @@
 import * as React from "react";
+import { redirect } from "next/navigation";
 import { AuthService } from "@/services/auth-service";
 import { ProfileService } from "@/services/profile-service";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { WorkspaceService } from "@/services/workspace-service";
+import { CreatorContextService } from "@/services/creator-context-service";
+import { UsageBillingService } from "@/services/usage-billing-service";
+import { getValidatedActiveWorkspaceId } from "@/lib/security/workspace-cookie";
+import { getProviderAvailability } from "@/lib/ai/provider-registry";
 import { Badge } from "@/components/ui/badge";
-import { EmptyState } from "@/components/ui/empty-state";
-import { User, Sparkles, Dna } from "lucide-react";
+import { CreatorIntelligenceHub } from "@/features/creator-intelligence/components/creator-intelligence-hub";
 
 export default async function CreatorProfilePage() {
   const user = await AuthService.getCurrentUser();
-  const profile = user ? await ProfileService.getProfile(user.id) : null;
+  if (!user) {
+    redirect("/sign-in");
+  }
+
+  const [profile, workspaces, activeCookieWsId] = await Promise.all([
+    ProfileService.getProfile(user.id),
+    WorkspaceService.getWorkspacesForUser(user.id),
+    getValidatedActiveWorkspaceId(),
+  ]);
+
+  const currentWorkspace =
+    workspaces.find((w) => w.id === activeCookieWsId) ?? workspaces[0];
+
+  if (!currentWorkspace) {
+    redirect("/dashboard");
+  }
+
+  const [creatorContext, usageOverview] = await Promise.all([
+    CreatorContextService.getWorkspaceCreatorContext(
+      currentWorkspace.id,
+      user.id
+    ),
+    UsageBillingService.getWorkspaceUsageOverview(currentWorkspace.id, user.id),
+  ]);
+
+  const providerStatus = getProviderAvailability();
+  const canEdit =
+    currentWorkspace.role === "owner" ||
+    currentWorkspace.role === "admin" ||
+    currentWorkspace.role === "editor";
+
+  const activeProviderLabel = providerStatus.geminiConfigured
+    ? `Google Gemini (${creatorContext.defaultAiModel})`
+    : providerStatus.openaiConfigured
+      ? "OpenAI Fallback"
+      : "Manual Mode (API Key Belum Diatur)";
+
+  const fallbackName =
+    profile?.full_name || user.email?.split("@")[0] || "Creator";
 
   return (
-    <div className="space-y-6 max-w-4xl animate-in fade-in-50 duration-300">
-      <div className="flex items-center justify-between border-b border-border pb-4">
+    <div className="space-y-6 animate-in fade-in-50 duration-300">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Creator Profile & DNA
+              Creator Intelligence & DNA
             </h1>
-            <Badge variant="comingSoon" className="text-xs">
-              Fase 2 Pipeline
+            <Badge
+              variant={creatorContext.creatorDna ? "success" : "secondary"}
+              className="text-xs"
+            >
+              {creatorContext.creatorDna
+                ? "Creator DNA Aktif"
+                : "Siap Onboarding"}
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Fondasi tone of voice, kepribadian konten, dan positioning Anda di hadapan audiens.
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Wawancara onboarding adaptif, Creator DNA yang dapat disunting, persona audiens, evaluasi kesiapan, monetisasi realistis, dan roadmap 30 hari.
           </p>
         </div>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* User Identity Card */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-primary" />
-              <CardTitle className="text-base font-semibold">Identitas Pengguna</CardTitle>
-            </div>
-            <CardDescription className="text-xs">
-              Data akun yang tersinkronisasi di Supabase Auth.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2 text-xs">
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">Nama:</span>
-              <span className="font-semibold text-foreground">{profile?.full_name || "-"}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">Email:</span>
-              <span className="font-semibold text-foreground">{user?.email || "-"}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-border/50">
-              <span className="text-muted-foreground">Bahasa Pilihan:</span>
-              <span className="font-semibold text-foreground uppercase">{profile?.preferred_language || "ID"}</span>
-            </div>
-            <div className="flex justify-between py-1.5">
-              <span className="text-muted-foreground">Status Onboarding:</span>
-              <Badge variant={profile?.onboarding_completed ? "success" : "secondary"} className="text-[10px]">
-                {profile?.onboarding_completed ? "Selesai" : "Belum Onboarding"}
-              </Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Creator DNA Card (Fase 2 Preview) */}
-        <Card className="border-primary/20 bg-card/60">
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Dna className="h-4 w-4 text-primary" />
-              <CardTitle className="text-base font-semibold">Creator DNA Synthesis</CardTitle>
-            </div>
-            <CardDescription className="text-xs">
-              Sintesis otomatis dari AI Onboarding Interview (Segera hadir di Fase 2).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <EmptyState
-              icon={Sparkles}
-              title="Creator DNA Belum Dihasilkan"
-              description="Fitur wawancara AI mendalam untuk mengekstrak tone of voice dan arketipe konten Anda akan diimplementasikan di Fase 2."
-              className="p-6"
-            />
-          </CardContent>
-        </Card>
-      </div>
+      <CreatorIntelligenceHub
+        context={creatorContext}
+        usage={usageOverview}
+        canEdit={canEdit}
+        aiConfigured={providerStatus.anyConfigured}
+        activeProviderLabel={activeProviderLabel}
+        fallbackCreatorName={fallbackName}
+      />
     </div>
   );
 }

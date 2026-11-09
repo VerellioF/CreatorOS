@@ -1,9 +1,11 @@
 import * as React from "react";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { AuthService } from "@/services/auth-service";
-import { WorkspaceService, type WorkspaceWithRole } from "@/services/workspace-service";
+import { WorkspaceService } from "@/services/workspace-service";
 import { ProfileService } from "@/services/profile-service";
+import { UsageBillingService } from "@/services/usage-billing-service";
+import { buildSafeWorkspaceSlug } from "@/lib/security/sanitize";
+import { getValidatedActiveWorkspaceId } from "@/lib/security/workspace-cookie";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 
@@ -17,17 +19,17 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  // Fetch or create profile & workspaces
   const profile = await ProfileService.getProfile(user.id);
   let workspaces = await WorkspaceService.getWorkspacesForUser(user.id);
 
-  // If user has no workspace, automatically create default personal workspace
-  if (workspaces.length === 0) {
+  // Enforce personal owned workspace invariant if user owns zero active workspaces
+  const hasOwnedWorkspace = workspaces.some((ws) => ws.role === "owner");
+  if (!hasOwnedWorkspace) {
     const defaultName = profile?.full_name || user.email?.split("@")[0] || "My Creator";
-    const defaultSlug = `${defaultName.toLowerCase().replace(/[^\w\s-]/g, "").replace(/\s+/g, "-")}-${user.id.slice(0, 5)}`;
-    
+    const defaultSlug = buildSafeWorkspaceSlug(defaultName, user.id);
+
     await WorkspaceService.createWorkspace(user.id, {
-      name: `${defaultName}'s Workspace`,
+      name: `${defaultName}'s Workspace`.slice(0, 50),
       slug: defaultSlug,
       creatorMode: "creator",
     });
@@ -35,10 +37,18 @@ export default async function DashboardLayout({
     workspaces = await WorkspaceService.getWorkspacesForUser(user.id);
   }
 
-  const cookieStore = await cookies();
-  const activeWorkspaceCookie = cookieStore.get("active_workspace_id")?.value;
+  const activeWorkspaceCookie = await getValidatedActiveWorkspaceId();
   const currentWorkspace =
     workspaces.find((w) => w.id === activeWorkspaceCookie) || workspaces[0];
+
+  const creditBalance = currentWorkspace
+    ? (
+        await UsageBillingService.getWorkspaceCreditBalance(
+          currentWorkspace.id,
+          user.id
+        )
+      ).balance
+    : 50;
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
@@ -50,6 +60,7 @@ export default async function DashboardLayout({
         <Header
           workspaces={workspaces}
           currentWorkspaceId={currentWorkspace?.id}
+          creditBalance={creditBalance}
           user={{
             email: user.email,
             fullName: profile?.full_name,

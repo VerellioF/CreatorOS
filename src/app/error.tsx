@@ -12,9 +12,13 @@ export default function ErrorBoundary({
   reset: () => void;
 }) {
   React.useEffect(() => {
-    // Log error to monitoring service (Sentry, etc.)
     console.error("Runtime application error:", error);
   }, [error]);
+
+  const safeMessage =
+    process.env.NODE_ENV === "production"
+      ? "Aplikasi mengalami gangguan tak terduga. Silakan muat ulang halaman atau coba beberapa saat lagi."
+      : error.message || "Aplikasi mengalami kegagalan tak terduga.";
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6 text-center bg-background">
@@ -24,9 +28,15 @@ export default function ErrorBoundary({
       <h2 className="text-2xl font-bold tracking-tight text-foreground mb-2">
         Terjadi Kesalahan Sistem
       </h2>
-      <p className="text-xs text-muted-foreground max-w-md mb-6 leading-relaxed">
-        {error.message || "Aplikasi mengalami kegagalan tak terduga. Tim teknis telah menerima log error ini."}
+      <p className="text-xs text-muted-foreground max-w-md mb-2 leading-relaxed">
+        {safeMessage}
       </p>
+      {error.digest && (
+        <p className="text-[11px] font-mono text-muted-foreground/80 mb-6">
+          Kode Referensi: {error.digest}
+        </p>
+      )}
+      {!error.digest && <div className="mb-4" />}
       <Button onClick={() => reset()} size="sm" className="gap-2">
         <RefreshCw className="h-4 w-4" />
         <span>Muat Ulang Halaman</span>

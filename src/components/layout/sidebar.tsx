@@ -25,6 +25,9 @@ import {
   Receipt,
   Settings,
   Sparkles,
+  Captions,
+  Film,
+  Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils/utils";
 import { Badge } from "@/components/ui/badge";
@@ -54,20 +57,23 @@ const navSections: NavSection[] = [
   {
     title: "RESEARCH & STRATEGY",
     items: [
-      { title: "Trend Research", href: "/trends", icon: TrendingUp, isReady: false },
-      { title: "Competitor Research", href: "/competitors", icon: Users2, isReady: false },
-      { title: "Content Strategy", href: "/strategy", icon: Target, isReady: false },
-      { title: "Idea Generator", href: "/ideas", icon: Lightbulb, isReady: false },
+      { title: "Trend Research", href: "/trends", icon: TrendingUp, isReady: true },
+      { title: "Competitor Research", href: "/competitors", icon: Users2, isReady: true },
+      { title: "Content Strategy", href: "/strategy", icon: Target, isReady: true },
+      { title: "Idea Generator", href: "/ideas", icon: Lightbulb, isReady: true },
     ],
   },
   {
     title: "CONTENT STUDIO",
     items: [
-      { title: "Script Studio", href: "/studio/scripts", icon: FileText, isReady: false },
-      { title: "Storyboard Studio", href: "/studio/storyboard", icon: Clapperboard, isReady: false },
-      { title: "Image Studio", href: "/studio/images", icon: ImageIcon, isReady: false },
-      { title: "Video Studio", href: "/studio/video", icon: Video, isReady: false },
-      { title: "Voice Studio", href: "/studio/voice", icon: Mic, isReady: false },
+      { title: "Script Studio", href: "/studio/scripts", icon: FileText, isReady: true },
+      { title: "Storyboard Studio", href: "/studio/storyboard", icon: Clapperboard, isReady: true },
+      { title: "Image Studio", href: "/studio/images", icon: ImageIcon, isReady: true },
+      { title: "Voice Studio", href: "/studio/voice", icon: Mic, isReady: true },
+      { title: "Subtitle Studio", href: "/studio/subtitles", icon: Captions, isReady: true },
+      { title: "Video Studio", href: "/studio/video", icon: Video, isReady: true },
+      { title: "Timeline Editor", href: "/studio/timeline", icon: Film, isReady: true },
+      { title: "Export Center", href: "/studio/export", icon: Download, isReady: true },
     ],
   },
   {
@@ -82,8 +88,8 @@ const navSections: NavSection[] = [
   {
     title: "SYSTEM",
     items: [
-      { title: "Agent Workspace", href: "/agents", icon: Cpu, isReady: false },
-      { title: "Usage & Credits", href: "/usage", icon: Receipt, isReady: false },
+      { title: "Agent Workspace", href: "/agents", icon: Cpu, isReady: true },
+      { title: "Usage & Credits", href: "/usage", icon: Receipt, isReady: true },
       { title: "Settings", href: "/settings", icon: Settings, isReady: true },
     ],
   },
@@ -165,8 +171,8 @@ export function Sidebar() {
       {/* Footer Info */}
       <div className="p-3 border-t border-sidebar-border">
         <div className="rounded-lg bg-card/60 p-3 border border-border/50 text-[11px] text-muted-foreground">
-          <div className="font-semibold text-foreground mb-0.5">Phase 1 Foundation</div>
-          <p>Multi-tenant architecture & core design system active.</p>
+          <div className="font-semibold text-foreground mb-0.5">Phase 3 Research & Content Engine</div>
+          <p>Source-backed research, editable pillars, Idea Generator & Script Studio active.</p>
         </div>
       </div>
     </aside>

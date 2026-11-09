@@ -447,6 +447,159 @@ CREATE TABLE audit_logs (
 );
 ```
 
+### 2.8 Phase 4: AI Production Studio Tables
+
+```sql
+-- 28. storyboards: Multi-scene production blueprints
+CREATE TABLE storyboards (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    content_item_id UUID REFERENCES content_items(id) ON DELETE SET NULL,
+    script_id UUID REFERENCES scripts(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    visual_theme TEXT NOT NULL DEFAULT 'cinematic',
+    aspect_ratio VARCHAR(10) NOT NULL DEFAULT '9:16',
+    scenes JSONB NOT NULL DEFAULT '[]'::jsonb,
+    total_duration_seconds INT NOT NULL DEFAULT 0,
+    created_by UUID REFERENCES profiles(id) ON DELETE RESTRICT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 29. media_assets: Persistent multi-tenant media library
+CREATE TABLE media_assets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    title TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    asset_type VARCHAR(20) NOT NULL, -- 'image' | 'voiceover' | 'video' | 'subtitle' | 'music'
+    byte_size BIGINT NOT NULL DEFAULT 0,
+    duration_seconds INT,
+    width INT,
+    height INT,
+    storage_provider VARCHAR(30) NOT NULL DEFAULT 'local_disk',
+    public_url TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_by UUID REFERENCES profiles(id) ON DELETE RESTRICT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 30. generation_jobs: Asynchronous media processing jobs
+CREATE TABLE generation_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    job_type VARCHAR(30) NOT NULL, -- 'image_generation' | 'voice_generation' | 'video_generation' | 'timeline_export'
+    status VARCHAR(20) NOT NULL DEFAULT 'queued', -- 'queued' | 'processing' | 'completed' | 'failed' | 'retrying'
+    progress_percentage INT NOT NULL DEFAULT 0,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result_asset_id UUID REFERENCES media_assets(id) ON DELETE SET NULL,
+    error_message TEXT,
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 3,
+    credits_cost INT NOT NULL DEFAULT 0,
+    created_by UUID REFERENCES profiles(id) ON DELETE RESTRICT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 31. video_projects: Non-destructive multi-track video timeline compositions
+CREATE TABLE video_projects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    storyboard_id UUID REFERENCES storyboards(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    aspect_ratio VARCHAR(10) NOT NULL DEFAULT '9:16',
+    timeline_data JSONB NOT NULL DEFAULT '{"tracks": []}'::jsonb,
+    latest_export_job_id UUID REFERENCES generation_jobs(id) ON DELETE SET NULL,
+    latest_asset_id UUID REFERENCES media_assets(id) ON DELETE SET NULL,
+    created_by UUID REFERENCES profiles(id) ON DELETE RESTRICT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 32. workflow_runs: Multi-step AI agent orchestrated workflow execution instances
+CREATE TABLE workflow_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    workflow_type VARCHAR(64) NOT NULL,
+    title TEXT NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending', -- 'pending' | 'running' | 'waiting_approval' | 'paused' | 'completed' | 'failed' | 'cancelled'
+    current_step_index INT NOT NULL DEFAULT 0,
+    total_steps INT NOT NULL DEFAULT 1,
+    initial_parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+    context_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+    total_tokens_used INT NOT NULL DEFAULT 0,
+    total_cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0.000000,
+    total_credits_deducted INT NOT NULL DEFAULT 0,
+    autonomous_turns_count INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 33. workflow_steps: Individual agent tasks within an orchestrated workflow DAG
+CREATE TABLE workflow_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE NOT NULL,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    step_index INT NOT NULL,
+    agent_name VARCHAR(64) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'pending', -- 'pending' | 'running' | 'waiting_approval' | 'completed' | 'failed' | 'skipped' | 'cancelled'
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    approved_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    approved_at TIMESTAMPTZ,
+    input_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output_payload JSONB,
+    error_details TEXT,
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 2,
+    timeout_ms INT NOT NULL DEFAULT 45000,
+    tokens_used INT NOT NULL DEFAULT 0,
+    cost_usd NUMERIC(12,6) NOT NULL DEFAULT 0.000000,
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT uq_workflow_step UNIQUE (workflow_run_id, step_index)
+);
+
+-- 34. workflow_schedules: Cron and recurring automated workflow configurations
+CREATE TABLE workflow_schedules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    workflow_type VARCHAR(64) NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    cron_expression VARCHAR(64) NOT NULL,
+    parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    max_autonomous_turns INT NOT NULL DEFAULT 5,
+    last_run_at TIMESTAMPTZ,
+    next_run_at TIMESTAMPTZ,
+    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    CONSTRAINT check_max_autonomous_turns CHECK (max_autonomous_turns <= 5)
+);
+
+-- 35. workflow_logs: Granular inspectable agent execution telemetry and logs
+CREATE TABLE workflow_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    workflow_run_id UUID REFERENCES workflow_runs(id) ON DELETE CASCADE NOT NULL,
+    workflow_step_id UUID REFERENCES workflow_steps(id) ON DELETE SET NULL,
+    agent_name VARCHAR(64) NOT NULL,
+    log_level VARCHAR(20) NOT NULL, -- 'info' | 'warn' | 'error' | 'debug'
+    message TEXT NOT NULL,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+```
+
 ---
 
 ## 3. COMPREHENSIVE INDEXING STRATEGY
@@ -462,6 +615,15 @@ CREATE INDEX idx_publishing_jobs_status_sched ON publishing_jobs(status, schedul
 CREATE INDEX idx_ai_provider_usage_workspace ON ai_provider_usage(workspace_id, created_at);
 CREATE INDEX idx_credit_transactions_wallet ON credit_transactions(wallet_id);
 CREATE INDEX idx_payment_transactions_order ON payment_transactions(order_id);
+CREATE INDEX idx_storyboards_workspace ON storyboards(workspace_id);
+CREATE INDEX idx_media_assets_workspace ON media_assets(workspace_id);
+CREATE INDEX idx_media_assets_type ON media_assets(asset_type);
+CREATE INDEX idx_generation_jobs_workspace_status ON generation_jobs(workspace_id, status);
+CREATE INDEX idx_video_projects_workspace ON video_projects(workspace_id);
+CREATE INDEX idx_workflow_runs_workspace_status ON workflow_runs(workspace_id, status);
+CREATE INDEX idx_workflow_steps_run_step ON workflow_steps(workflow_run_id, step_index);
+CREATE INDEX idx_workflow_schedules_active_next ON workflow_schedules(is_active, next_run_at);
+CREATE INDEX idx_workflow_logs_run_created ON workflow_logs(workflow_run_id, created_at DESC);
 ```
 
 ---
@@ -474,7 +636,15 @@ ALTER TABLE workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE creator_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE content_items ENABLE ROW LEVEL SECURITY;
--- [Enabled on all 27 tables]
+ALTER TABLE storyboards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE media_assets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE generation_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_schedules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_logs ENABLE ROW LEVEL SECURITY;
+-- [Enabled on all 35 tables]
 ```
 
 Standard helper function to check workspace membership:

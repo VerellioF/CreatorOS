@@ -1,186 +1,266 @@
 -- ==============================================================================
--- SQL TEST SUITE: security_hardening_audit.sql
--- PRODUCT: CreatorOS AI (Phase 1 Database Foundation)
--- PURPOSE: Verify 15 Security Proofs via Transaction Rollbacks & Context Switching
--- NOTE: Uses PostgreSQL SET LOCAL to simulate authenticated users and RLS policies.
+-- SQL SECURITY & RLS AUDIT SUITE: security_hardening_audit.sql
+-- PRODUCT: CreatorOS AI (Phase 1 Database Foundation — Final Security Audit)
+-- PURPOSE: Self-contained SQL verification of Tenant Isolation, RPC-Only Membership
+--          Mutations, Single-Use Internal Tokens, RBAC Hierarchy, Last-Owner
+--          Protection, Ownership Transfer Atomicity, Account Deletion Lifecycle,
+--          Slug Collision Recovery, and `INSERT ... RETURNING` RLS.
+--          Multi-connection concurrency & isolation level tests run in the
+--          companion Node.js runner (`supabase/tests/run_real_postgres_audit.mjs`).
+--          All changes in this SQL script are rolled back cleanly at the end.
 -- ==============================================================================
 
 BEGIN;
 
--- Setup temporary test users in auth.users simulation
 DO $$
 DECLARE
-    uid_a UUID := '11111111-1111-1111-1111-111111111111';
-    uid_b UUID := '22222222-2222-2222-2222-222222222222';
-    uid_c UUID := '33333333-3333-3333-3333-333333333333';
-    ws_a UUID;
-    ws_b UUID;
-    v_count INT;
+    uid_owner_a   UUID := pg_catalog.gen_random_uuid();
+    uid_admin_a   UUID := pg_catalog.gen_random_uuid();
+    uid_admin2_a  UUID := pg_catalog.gen_random_uuid();
+    uid_editor_a  UUID := pg_catalog.gen_random_uuid();
+    uid_viewer_a  UUID := pg_catalog.gen_random_uuid();
+    uid_member_a  UUID := pg_catalog.gen_random_uuid();
+    uid_outsider  UUID := pg_catalog.gen_random_uuid();
+    uid_collide   UUID := pg_catalog.gen_random_uuid();
+    uid_founder   UUID := pg_catalog.gen_random_uuid();
+    uid_successor UUID := pg_catalog.gen_random_uuid();
+    ws_a          UUID;
+    ws_b          UUID;
+    ws_shared     UUID;
+    v_squat_slug  TEXT;
+    v_count       INT;
+    v_ok          BOOLEAN;
 BEGIN
-    RAISE NOTICE '=== STARTING 15 SECURITY AUDIT PROOFS ===';
+    RAISE NOTICE '=== STARTING FINAL ROLE-SWITCHED SECURITY & RLS SQL AUDIT ===';
 
     -- --------------------------------------------------------------------------
-    -- PROOF 11: Signup automatically creates profile, workspace, member, settings
+    -- 1. SIGNUP PROVISIONING (`auth.users` -> Profile + Personal WS + Owner + Settings)
     -- --------------------------------------------------------------------------
-    INSERT INTO public.profiles (id, full_name, preferred_language, theme_preference, onboarding_completed)
-    VALUES (uid_a, 'User Alpha', 'id', 'system', false)
-    ON CONFLICT (id) DO NOTHING;
+    INSERT INTO auth.users (id, email, raw_user_meta_data) VALUES
+        (uid_owner_a,   'owner.a@sql-audit.test',   '{"full_name": "Owner Alpha"}'::jsonb),
+        (uid_admin_a,   'admin.a@sql-audit.test',   '{"full_name": "Admin Alpha"}'::jsonb),
+        (uid_admin2_a,  'admin2.a@sql-audit.test',  '{"full_name": "Admin Two"}'::jsonb),
+        (uid_editor_a,  'editor.a@sql-audit.test',  '{"full_name": "Editor Alpha"}'::jsonb),
+        (uid_viewer_a,  'viewer.a@sql-audit.test',  '{"full_name": "Viewer Alpha"}'::jsonb),
+        (uid_member_a,  'member.a@sql-audit.test',  '{"full_name": "Member Alpha"}'::jsonb),
+        (uid_outsider,  'outsider@sql-audit.test',  '{"full_name": "Outsider Beta"}'::jsonb),
+        (uid_founder,   'founder@sql-audit.test',   '{"full_name": "Founder User"}'::jsonb),
+        (uid_successor, 'successor@sql-audit.test', '{"full_name": "Successor User"}'::jsonb);
 
-    INSERT INTO public.workspaces (name, slug, creator_mode, created_by)
-    VALUES ('Alpha Workspace', 'alpha-ws', 'creator', uid_a)
-    RETURNING id INTO ws_a;
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
 
-    -- Verify handle_new_workspace trigger created owner member and settings
-    SELECT count(*) INTO v_count FROM public.workspace_members WHERE workspace_id = ws_a AND user_id = uid_a AND role = 'owner';
-    ASSERT v_count = 1, 'Proof 11 Failed: Workspace owner member not created automatically';
+    SELECT id INTO ws_a FROM public.workspaces WHERE created_by = uid_owner_a;
+    ASSERT ws_a IS NOT NULL, 'Signup failed: Personal workspace missing';
+
+    SELECT count(*) INTO v_count FROM public.workspace_members
+    WHERE workspace_id = ws_a AND user_id = uid_owner_a AND role = 'owner';
+    ASSERT v_count = 1, 'Signup failed: Owner membership missing';
 
     SELECT count(*) INTO v_count FROM public.workspace_settings WHERE workspace_id = ws_a;
-    ASSERT v_count = 1, 'Proof 11 Failed: Workspace settings not created automatically';
-    RAISE NOTICE 'PASS - Proof 11: Automatic provisioning verified';
+    ASSERT v_count = 1, 'Signup failed: Workspace settings missing';
 
-    -- Setup User Beta
-    INSERT INTO public.profiles (id, full_name, preferred_language, theme_preference, onboarding_completed)
-    VALUES (uid_b, 'User Beta', 'id', 'system', false)
-    ON CONFLICT (id) DO NOTHING;
+    -- Owner Alpha populates Workspace A via validated RPC `add_workspace_member`
+    PERFORM public.add_workspace_member(ws_a, uid_admin_a,  'admin');
+    PERFORM public.add_workspace_member(ws_a, uid_admin2_a, 'admin');
+    PERFORM public.add_workspace_member(ws_a, uid_editor_a, 'editor');
+    PERFORM public.add_workspace_member(ws_a, uid_viewer_a, 'viewer');
+    PERFORM public.add_workspace_member(ws_a, uid_member_a, 'member');
+    RESET ROLE;
 
-    INSERT INTO public.workspaces (name, slug, creator_mode, created_by)
-    VALUES ('Beta Workspace', 'beta-ws', 'creator', uid_b)
-    RETURNING id INTO ws_b;
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_outsider::text, true);
+    SELECT id INTO ws_b FROM public.workspaces WHERE created_by = uid_outsider;
+    ASSERT ws_b IS NOT NULL, 'Outsider personal workspace missing';
+    RESET ROLE;
 
-    -- Setup User Charlie as Admin in Workspace A
-    INSERT INTO public.profiles (id, full_name, preferred_language, theme_preference, onboarding_completed)
-    VALUES (uid_c, 'User Charlie', 'id', 'system', false)
-    ON CONFLICT (id) DO NOTHING;
-
-    INSERT INTO public.workspace_members (workspace_id, user_id, role)
-    VALUES (ws_a, uid_c, 'admin');
+    RAISE NOTICE 'PASS [SQL-01]: Atomic signup provisioning & RPC member addition verified';
 
     -- --------------------------------------------------------------------------
-    -- PROOF 10: Immutability of workspace_id and user_id on UPDATE
+    -- 2. DIRECT DML ON `workspace_members` BLOCKED FOR ALL ROLES
     -- --------------------------------------------------------------------------
     BEGIN
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_a::text, true);
-        UPDATE public.workspace_members 
-        SET workspace_id = ws_b 
-        WHERE workspace_id = ws_a AND user_id = uid_a;
-        RAISE EXCEPTION 'Proof 10 Failed: Changing workspace_id was allowed!';
-    EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Membership identity%' THEN
-            RAISE NOTICE 'PASS - Proof 10: Membership identity immutability verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 10: Rejected with %', SQLERRM;
-        END IF;
-    END;
-
-    -- --------------------------------------------------------------------------
-    -- PROOF 3: Admin cannot grant admin role to another user
-    -- --------------------------------------------------------------------------
-    BEGIN
-        -- Charlie (admin) tries to add a new member with role = 'admin'
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_c::text, true);
+        SET LOCAL ROLE authenticated;
+        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
         INSERT INTO public.workspace_members (workspace_id, user_id, role)
-        VALUES (ws_a, uid_b, 'admin');
-        RAISE EXCEPTION 'Proof 3 Failed: Admin was able to grant admin role!';
-    EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Only workspace owners can assign the admin role%' THEN
-            RAISE NOTICE 'PASS - Proof 3: Admin restricted from granting admin verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 3: Blocked with %', SQLERRM;
-        END IF;
+        VALUES (ws_a, uid_outsider, 'member');
+        RAISE EXCEPTION 'AUDIT_BREACH: Direct INSERT on workspace_members succeeded';
+    EXCEPTION WHEN insufficient_privilege THEN
+        NULL;
     END;
+    RESET ROLE;
 
-    -- --------------------------------------------------------------------------
-    -- PROOF 4: Admin cannot promote anyone to owner
-    -- --------------------------------------------------------------------------
     BEGIN
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_c::text, true);
+        -- Even superuser un-tokenized direct DML is rejected by `enforce_workspace_member_safety()`
         INSERT INTO public.workspace_members (workspace_id, user_id, role)
-        VALUES (ws_a, uid_b, 'owner');
-        RAISE EXCEPTION 'Proof 4 Failed: Admin was able to assign owner role!';
+        VALUES (ws_a, uid_outsider, 'member');
+        RAISE EXCEPTION 'AUDIT_BREACH: Un-tokenized superuser direct INSERT succeeded';
     EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Only workspace owners can assign the owner role%' THEN
-            RAISE NOTICE 'PASS - Proof 4: Admin restricted from granting owner verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 4: Blocked with %', SQLERRM;
-        END IF;
+        IF SQLERRM LIKE 'AUDIT_BREACH%' THEN RAISE; END IF;
     END;
 
+    RAISE NOTICE 'PASS [SQL-02]: Direct table DML on workspace_members blocked by ACL + Trigger';
+
     -- --------------------------------------------------------------------------
-    -- PROOF 5: Admin cannot modify, demote, or delete an owner
+    -- 3. CROSS-TENANT ISOLATION & RBAC HIERARCHY ENFORCEMENT
     -- --------------------------------------------------------------------------
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_outsider::text, true);
+    SELECT count(*) INTO v_count FROM public.workspaces WHERE id = ws_a;
+    ASSERT v_count = 0, 'Cross-tenant workspace read leaked';
+    SELECT count(*) INTO v_count FROM public.workspace_members WHERE workspace_id = ws_a;
+    ASSERT v_count = 0, 'Cross-tenant members read leaked';
+    SELECT count(*) INTO v_count FROM public.workspace_settings WHERE workspace_id = ws_a;
+    ASSERT v_count = 0, 'Cross-tenant settings read leaked';
+    RESET ROLE;
+
+    -- Admin cannot grant/revoke admin or modify owner
     BEGIN
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_c::text, true);
-        DELETE FROM public.workspace_members WHERE workspace_id = ws_a AND user_id = uid_a;
-        RAISE EXCEPTION 'Proof 5 Failed: Admin was able to delete owner!';
+        SET LOCAL ROLE authenticated;
+        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_admin_a::text, true);
+        PERFORM public.update_workspace_member_role(ws_a, uid_editor_a, 'admin');
+        RAISE EXCEPTION 'AUDIT_BREACH: Admin promoted editor to admin';
     EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Admins cannot remove owners%' OR SQLERRM LIKE '%Owner protection violation%' THEN
-            RAISE NOTICE 'PASS - Proof 5: Admin deletion of owner blocked verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 5: Blocked with %', SQLERRM;
-        END IF;
+        IF SQLERRM LIKE 'AUDIT_BREACH%' THEN RAISE; END IF;
     END;
+    RESET ROLE;
 
-    -- --------------------------------------------------------------------------
-    -- PROOF 6 & 7: Last owner cannot leave or be removed
-    -- --------------------------------------------------------------------------
     BEGIN
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_a::text, true);
-        DELETE FROM public.workspace_members WHERE workspace_id = ws_a AND user_id = uid_a;
-        RAISE EXCEPTION 'Proof 6 Failed: Last owner was able to leave!';
+        SET LOCAL ROLE authenticated;
+        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_admin_a::text, true);
+        PERFORM public.remove_workspace_member(ws_a, uid_owner_a);
+        RAISE EXCEPTION 'AUDIT_BREACH: Admin removed owner';
     EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%The last remaining owner cannot leave or be removed%' THEN
-            RAISE NOTICE 'PASS - Proof 6 & 7: Last owner departure blocked verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 6 & 7: Blocked with %', SQLERRM;
-        END IF;
+        IF SQLERRM LIKE 'AUDIT_BREACH%' THEN RAISE; END IF;
     END;
+    RESET ROLE;
 
-    -- --------------------------------------------------------------------------
-    -- PROOF 8 & 9: Atomic ownership transfer function
-    -- --------------------------------------------------------------------------
+    -- Last owner cannot self-remove or direct-demote
     BEGIN
-        -- Charlie (admin) tries to transfer ownership -> Should fail
-        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_c::text, true);
-        PERFORM public.transfer_workspace_ownership(ws_a, uid_c);
-        RAISE EXCEPTION 'Proof 8 Failed: Non-owner was able to transfer ownership!';
+        SET LOCAL ROLE authenticated;
+        PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
+        PERFORM public.remove_workspace_member(ws_a, uid_owner_a);
+        RAISE EXCEPTION 'AUDIT_BREACH: Last owner self-removed';
     EXCEPTION WHEN OTHERS THEN
-        IF SQLERRM LIKE '%Only a workspace owner can transfer ownership%' THEN
-            RAISE NOTICE 'PASS - Proof 8: Non-owner transfer rejection verified';
-        ELSE
-            RAISE NOTICE 'PASS - Proof 8: Blocked with %', SQLERRM;
-        END IF;
+        IF SQLERRM LIKE 'AUDIT_BREACH%' THEN RAISE; END IF;
     END;
+    RESET ROLE;
 
-    -- User Alpha (owner) transfers ownership to Charlie (member)
-    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_a::text, true);
-    PERFORM public.transfer_workspace_ownership(ws_a, uid_c);
-
-    SELECT role INTO v_count FROM public.workspace_members WHERE workspace_id = ws_a AND user_id = uid_c;
-    SELECT role INTO v_count FROM public.workspace_members WHERE workspace_id = ws_a AND user_id = uid_a;
-    RAISE NOTICE 'PASS - Proof 8 & 9: Atomic ownership transfer succeeded and serialized';
+    RAISE NOTICE 'PASS [SQL-03]: Cross-tenant isolation, admin RBAC ceiling, and last-owner protection verified';
 
     -- --------------------------------------------------------------------------
-    -- PROOF 14: Orphaned workspace lacking owner is repaired
+    -- 4. OWNERSHIP TRANSFER & SINGLE-USE TOKEN CONSUMPTION
     -- --------------------------------------------------------------------------
-    -- Create orphaned workspace
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
+    v_ok := public.transfer_workspace_ownership(ws_a, uid_admin_a);
+    ASSERT v_ok = TRUE, 'Ownership transfer returned FALSE';
+    RESET ROLE;
+
+    SELECT count(*) INTO v_count FROM creatoros_internal.trusted_operations;
+    ASSERT v_count = 0, 'trusted_operations leaked unconsumed token';
+
+    -- Transfer back
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_admin_a::text, true);
+    PERFORM public.transfer_workspace_ownership(ws_a, uid_owner_a);
+    RESET ROLE;
+
+    RAISE NOTICE 'PASS [SQL-04]: Atomic ownership transfer & 0 lingering tokens verified';
+
+    -- --------------------------------------------------------------------------
+    -- 5. ACCOUNT DELETION LIFECYCLE (`auth.users` + `created_by ON DELETE SET NULL`)
+    -- --------------------------------------------------------------------------
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_founder::text, true);
     INSERT INTO public.workspaces (name, slug, creator_mode, created_by)
-    VALUES ('Orphaned WS', 'orphan-test-slug', 'creator', uid_b)
-    RETURNING id INTO ws_b;
+    VALUES ('SQL Shared WS', 'sql-shared-ws-' || pg_catalog.substr(pg_catalog.replace(uid_founder::text, '-', ''), 1, 12), 'creator', uid_founder)
+    RETURNING id INTO ws_shared;
+    PERFORM public.add_workspace_member(ws_shared, uid_successor, 'admin');
+    RESET ROLE;
 
-    -- Remove owner to simulate orphan state
-    DELETE FROM public.workspace_members WHERE workspace_id = ws_b;
+    -- Must block deletion before ownership transfer!
+    BEGIN
+        DELETE FROM auth.users WHERE id = uid_founder;
+        RAISE EXCEPTION 'AUDIT_BREACH: Deleted sole owner of shared workspace';
+    EXCEPTION WHEN OTHERS THEN
+        IF SQLERRM LIKE 'AUDIT_BREACH%' THEN RAISE; END IF;
+    END;
 
-    -- Run backfill logic
-    INSERT INTO public.workspace_members (workspace_id, user_id, role)
-    VALUES (ws_b, uid_b, 'owner')
-    ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = 'owner';
+    -- Transfer ownership -> deletion must now succeed & preserve shared workspace with created_by IS NULL!
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_founder::text, true);
+    PERFORM public.transfer_workspace_ownership(ws_shared, uid_successor);
+    RESET ROLE;
 
-    SELECT count(*) INTO v_count FROM public.workspace_members WHERE workspace_id = ws_b AND role = 'owner';
-    ASSERT v_count = 1, 'Proof 14 Failed: Orphaned workspace not repaired';
-    RAISE NOTICE 'PASS - Proof 14: Orphaned workspace repaired successfully';
+    DELETE FROM auth.users WHERE id = uid_founder;
 
-    RAISE NOTICE '=== ALL SQL AUDIT PROOFS COMPLETED SUCCESSFULLY ===';
-END $$;
+    SELECT count(*) INTO v_count FROM public.workspaces WHERE id = ws_shared AND created_by IS NULL;
+    ASSERT v_count = 1, 'Shared workspace did not survive creator deletion with created_by IS NULL';
 
--- Rollback transaction so test data is completely clean and never persists
+    RAISE NOTICE 'PASS [SQL-05]: Account deletion lifecycle & surviving workspace preservation verified';
+
+    -- --------------------------------------------------------------------------
+    -- 6. SLUG COLLISION RECOVERY AT INSERT TIME
+    -- --------------------------------------------------------------------------
+    v_squat_slug := 'sql-collide-' || pg_catalog.lower(pg_catalog.replace(uid_collide::text, '-', ''));
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
+    INSERT INTO public.workspaces (name, slug, creator_mode, created_by)
+    VALUES ('Squatter', v_squat_slug, 'creator', uid_owner_a);
+    RESET ROLE;
+
+    INSERT INTO auth.users (id, email, raw_user_meta_data)
+    VALUES (uid_collide, 'collide@sql-audit.test', '{"full_name": "SQL Collide"}'::jsonb);
+
+    SELECT count(*) INTO v_count FROM public.workspaces WHERE created_by = uid_collide AND slug <> v_squat_slug;
+    ASSERT v_count = 1, 'Slug collision recovery failed';
+
+    RAISE NOTICE 'PASS [SQL-06]: Slug collision recovery at INSERT time verified';
+
+    -- --------------------------------------------------------------------------
+    -- 7. URL XSS SCHEMES, RESERVED SLUGS, SOFT-DELETE ISOLATION & ATOMIC CONFIG RPC
+    -- --------------------------------------------------------------------------
+    SET LOCAL ROLE authenticated;
+    PERFORM pg_catalog.set_config('request.jwt.claim.sub', uid_owner_a::text, true);
+
+    BEGIN
+        UPDATE public.profiles SET avatar_url = 'javascript:alert(1)' WHERE id = uid_owner_a;
+        RAISE EXCEPTION 'AUDIT_BREACH: Allowed javascript: URL in profiles.avatar_url';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    BEGIN
+        INSERT INTO public.workspaces (name, slug, creator_mode, created_by)
+        VALUES ('Reserved Slug', 'admin', 'creator', uid_owner_a);
+        RAISE EXCEPTION 'AUDIT_BREACH: Allowed reserved slug admin';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    PERFORM public.update_workspace_configuration(
+        ws_a,
+        'SQL Atomic Config',
+        'business',
+        'en',
+        'gemini-1.5-pro',
+        FALSE,
+        TRUE
+    );
+    RESET ROLE;
+
+    SELECT count(*) INTO v_count
+    FROM public.workspaces w
+    JOIN public.workspace_settings s ON s.workspace_id = w.id
+    WHERE w.id = ws_a
+      AND w.name = 'SQL Atomic Config'
+      AND w.creator_mode = 'business'
+      AND s.default_ai_model = 'gemini-1.5-pro'
+      AND s.enable_auto_hashtag = FALSE;
+    ASSERT v_count = 1, 'Atomic workspace configuration RPC failed';
+
+    RAISE NOTICE 'PASS [SQL-07]: XSS URL schemes, reserved slugs & atomic configuration RPC verified';
+    RAISE NOTICE '=== ALL SQL AUDIT ASSERTIONS PASSED ===';
+END;
+$$;
+
 ROLLBACK;

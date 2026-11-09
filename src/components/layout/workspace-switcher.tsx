@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { WorkspaceWithRole } from "@/services/workspace-service";
-import { createWorkspaceAction } from "@/features/workspace/actions";
+import { createWorkspaceAction, switchWorkspaceAction } from "@/features/workspace/actions";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
@@ -68,11 +68,22 @@ export function WorkspaceSwitcher({
     }
   };
 
-  const handleSwitchWorkspace = (workspaceId: string) => {
+  const handleSwitchWorkspace = async (workspaceId: string) => {
     setIsOpen(false);
-    // Persist active workspace in cookie or route query
-    document.cookie = `active_workspace_id=${workspaceId}; path=/; max-age=31536000`;
-    router.refresh();
+    if (workspaceId === currentWorkspace?.id) {
+      return;
+    }
+
+    try {
+      const result = await switchWorkspaceAction(workspaceId);
+      if (!result.success) {
+        toast.error(result.error || "Gagal berpindah workspace");
+        return;
+      }
+      router.refresh();
+    } catch {
+      toast.error("Terjadi kesalahan saat berpindah workspace");
+    }
   };
 
   return (
@@ -161,13 +172,15 @@ export function WorkspaceSwitcher({
                   placeholder="Contoh: Creator Brand Studio"
                   value={name}
                   onChange={(e) => {
-                    setName(e.target.value);
+                    const nextName = e.target.value;
+                    setName(nextName);
                     if (!slug) {
                       setSlug(
-                        e.target.value
+                        nextName
                           .toLowerCase()
-                          .replace(/[^\w\s-]/g, "")
-                          .replace(/\s+/g, "-")
+                          .replace(/[^a-z0-9]+/g, "-")
+                          .replace(/^-+|-+$/g, "")
+                          .slice(0, 50)
                       );
                     }
                   }}

@@ -1,4 +1,5 @@
 import * as React from "react";
+import Link from "next/link";
 import { Search, Sparkles } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -8,13 +9,19 @@ import type { WorkspaceWithRole } from "@/services/workspace-service";
 interface HeaderProps {
   workspaces: WorkspaceWithRole[];
   currentWorkspaceId?: string;
+  creditBalance?: number;
   user: {
     email?: string;
     fullName?: string;
   };
 }
 
-export function Header({ workspaces, currentWorkspaceId, user }: HeaderProps) {
+export function Header({
+  workspaces,
+  currentWorkspaceId,
+  creditBalance = 50,
+  user,
+}: HeaderProps) {
   return (
     <header className="sticky top-0 z-30 flex h-14 w-full items-center justify-between border-b border-border bg-background/80 px-4 sm:px-6 backdrop-blur-md">
       <div className="flex items-center gap-3">
@@ -31,11 +38,15 @@ export function Header({ workspaces, currentWorkspaceId, user }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Credit Badge */}
-        <div className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
+        {/* Live Credit Balance Badge */}
+        <Link
+          href="/usage"
+          className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/15 transition-colors"
+          title="Lihat rincian penggunaan token & kredit AI"
+        >
           <Sparkles className="h-3 w-3" />
-          <span>50 Kredit</span>
-        </div>
+          <span>{creditBalance} Kredit</span>
+        </Link>
 
         <ThemeToggle />
 
