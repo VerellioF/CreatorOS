@@ -134,76 +134,112 @@ ALTER TABLE public.workflow_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workflow_logs ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies: workflow_runs
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_runs_select_member" ON public.workflow_runs;
+END $$;
+
 CREATE POLICY "workflow_runs_select_member"
     ON public.workflow_runs FOR SELECT
     TO authenticated
     USING (public.has_workspace_access(workspace_id));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_runs_insert_editor" ON public.workflow_runs;
+END $$;
+
 CREATE POLICY "workflow_runs_insert_editor"
     ON public.workflow_runs FOR INSERT
     TO authenticated
     WITH CHECK (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin', 'editor']::public.workspace_role[]));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_runs_update_editor" ON public.workflow_runs;
+END $$;
+
 CREATE POLICY "workflow_runs_update_editor"
     ON public.workflow_runs FOR UPDATE
     TO authenticated
     USING (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin', 'editor']::public.workspace_role[]));
 
 -- RLS Policies: workflow_steps
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_steps_select_member" ON public.workflow_steps;
+END $$;
+
 CREATE POLICY "workflow_steps_select_member"
     ON public.workflow_steps FOR SELECT
     TO authenticated
     USING (public.has_workspace_access(workspace_id));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_steps_insert_editor" ON public.workflow_steps;
+END $$;
+
 CREATE POLICY "workflow_steps_insert_editor"
     ON public.workflow_steps FOR INSERT
     TO authenticated
     WITH CHECK (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin', 'editor']::public.workspace_role[]));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_steps_update_editor" ON public.workflow_steps;
+END $$;
+
 CREATE POLICY "workflow_steps_update_editor"
     ON public.workflow_steps FOR UPDATE
     TO authenticated
     USING (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin', 'editor']::public.workspace_role[]));
 
 -- RLS Policies: workflow_schedules
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_schedules_select_member" ON public.workflow_schedules;
+END $$;
+
 CREATE POLICY "workflow_schedules_select_member"
     ON public.workflow_schedules FOR SELECT
     TO authenticated
     USING (public.has_workspace_access(workspace_id));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_schedules_insert_admin" ON public.workflow_schedules;
+END $$;
+
 CREATE POLICY "workflow_schedules_insert_admin"
     ON public.workflow_schedules FOR INSERT
     TO authenticated
     WITH CHECK (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin']::public.workspace_role[]));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_schedules_update_admin" ON public.workflow_schedules;
+END $$;
+
 CREATE POLICY "workflow_schedules_update_admin"
     ON public.workflow_schedules FOR UPDATE
     TO authenticated
     USING (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin']::public.workspace_role[]));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_schedules_delete_admin" ON public.workflow_schedules;
+END $$;
+
 CREATE POLICY "workflow_schedules_delete_admin"
     ON public.workflow_schedules FOR DELETE
     TO authenticated
     USING (public.has_workspace_role(workspace_id, ARRAY['owner', 'admin']::public.workspace_role[]));
 
 -- RLS Policies: workflow_logs
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_logs_select_member" ON public.workflow_logs;
+END $$;
+
 CREATE POLICY "workflow_logs_select_member"
     ON public.workflow_logs FOR SELECT
     TO authenticated
     USING (public.has_workspace_access(workspace_id));
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "workflow_logs_insert_editor" ON public.workflow_logs;
+END $$;
+
 CREATE POLICY "workflow_logs_insert_editor"
     ON public.workflow_logs FOR INSERT
     TO authenticated

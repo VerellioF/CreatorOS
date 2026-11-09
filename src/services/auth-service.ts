@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { clearActiveWorkspaceCookie } from "@/lib/security/workspace-cookie";
 import type {
@@ -152,8 +153,9 @@ export class AuthService {
 
   /**
    * Retrieves current server-verified authenticated user via `supabase.auth.getUser()`.
+   * Wrapped in React.cache() to deduplicate redundant calls in the same server request pass.
    */
-  static async getCurrentUser() {
+  static getCurrentUser = cache(async () => {
     try {
       const supabase = await createClient();
       const {
@@ -169,5 +171,5 @@ export class AuthService {
     } catch {
       return null;
     }
-  }
+  });
 }

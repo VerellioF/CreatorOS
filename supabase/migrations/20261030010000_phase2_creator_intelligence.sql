@@ -318,43 +318,35 @@ $$;
 ALTER FUNCTION public.enforce_phase2_immutable_keys() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.enforce_phase2_immutable_keys() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS trigger_onboarding_sessions_updated_at ON public.onboarding_sessions;
-CREATE TRIGGER trigger_onboarding_sessions_updated_at
+CREATE OR REPLACE TRIGGER trigger_onboarding_sessions_updated_at
     BEFORE UPDATE ON public.onboarding_sessions
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_onboarding_sessions_immutable_keys ON public.onboarding_sessions;
-CREATE TRIGGER trigger_onboarding_sessions_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_onboarding_sessions_immutable_keys
     BEFORE UPDATE ON public.onboarding_sessions
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();
 
-DROP TRIGGER IF EXISTS trigger_creator_profiles_updated_at ON public.creator_profiles;
-CREATE TRIGGER trigger_creator_profiles_updated_at
+CREATE OR REPLACE TRIGGER trigger_creator_profiles_updated_at
     BEFORE UPDATE ON public.creator_profiles
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_creator_profiles_immutable_keys ON public.creator_profiles;
-CREATE TRIGGER trigger_creator_profiles_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_creator_profiles_immutable_keys
     BEFORE UPDATE ON public.creator_profiles
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();
 
-DROP TRIGGER IF EXISTS trigger_niche_recommendations_updated_at ON public.niche_recommendations;
-CREATE TRIGGER trigger_niche_recommendations_updated_at
+CREATE OR REPLACE TRIGGER trigger_niche_recommendations_updated_at
     BEFORE UPDATE ON public.niche_recommendations
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_niche_recommendations_immutable_keys ON public.niche_recommendations;
-CREATE TRIGGER trigger_niche_recommendations_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_niche_recommendations_immutable_keys
     BEFORE UPDATE ON public.niche_recommendations
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();
 
-DROP TRIGGER IF EXISTS trigger_credit_wallets_updated_at ON public.credit_wallets;
-CREATE TRIGGER trigger_credit_wallets_updated_at
+CREATE OR REPLACE TRIGGER trigger_credit_wallets_updated_at
     BEFORE UPDATE ON public.credit_wallets
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_credit_wallets_immutable_keys ON public.credit_wallets;
-CREATE TRIGGER trigger_credit_wallets_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_credit_wallets_immutable_keys
     BEFORE UPDATE ON public.credit_wallets
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();
 
@@ -447,8 +439,7 @@ $$;
 ALTER FUNCTION public.handle_workspace_credit_wallet() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.handle_workspace_credit_wallet() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS on_workspace_created_wallet ON public.workspaces;
-CREATE TRIGGER on_workspace_created_wallet
+CREATE OR REPLACE TRIGGER on_workspace_created_wallet
     AFTER INSERT ON public.workspaces
     FOR EACH ROW EXECUTE FUNCTION public.handle_workspace_credit_wallet();
 
@@ -757,6 +748,7 @@ ALTER TABLE public.agent_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_provider_usage ENABLE ROW LEVEL SECURITY;
 
 -- Drop policies idempotently if re-running migration
+DO $$ BEGIN
 DROP POLICY IF EXISTS "onboarding_sessions_select_member" ON public.onboarding_sessions;
 DROP POLICY IF EXISTS "onboarding_sessions_insert_editor" ON public.onboarding_sessions;
 DROP POLICY IF EXISTS "onboarding_sessions_update_editor" ON public.onboarding_sessions;
@@ -776,6 +768,7 @@ DROP POLICY IF EXISTS "credit_wallets_select_member" ON public.credit_wallets;
 DROP POLICY IF EXISTS "credit_transactions_select_member" ON public.credit_transactions;
 DROP POLICY IF EXISTS "agent_runs_select_member" ON public.agent_runs;
 DROP POLICY IF EXISTS "ai_provider_usage_select_member" ON public.ai_provider_usage;
+END $$;
 
 -- ONBOARDING_SESSIONS POLICIES
 CREATE POLICY "onboarding_sessions_select_member" ON public.onboarding_sessions

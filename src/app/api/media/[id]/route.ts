@@ -6,6 +6,11 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
+
+  if (!id || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
+    return new NextResponse("Invalid media identifier", { status: 400 });
+  }
+
   const media = await MediaStorageService.getMediaFile(id);
 
   if (!media) {
@@ -26,6 +31,7 @@ export async function GET(
         status: 416,
         headers: {
           "Content-Range": `bytes */${fileSize}`,
+          "X-Content-Type-Options": "nosniff",
         },
       });
     }
@@ -40,6 +46,7 @@ export async function GET(
         "Content-Length": String(chunk.length),
         "Content-Type": media.mimeType,
         "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   }
@@ -52,7 +59,8 @@ export async function GET(
       "Content-Length": String(fileSize),
       "Accept-Ranges": "bytes",
       "Cache-Control": "public, max-age=86400, stale-while-revalidate=604800",
-      "Content-Disposition": `inline; filename="${media.filename}"`,
+      "Content-Disposition": `inline; filename="${encodeURIComponent(media.filename)}"`,
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

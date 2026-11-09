@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
+import { BeginnerGuideCard } from "@/features/creator-intelligence/components/beginner-guide-card";
 import {
   Sparkles,
   CheckCircle2,
@@ -28,6 +29,8 @@ import {
   Layers,
   Calendar,
   Dna,
+  AlertCircle,
+  ShieldCheck,
 } from "lucide-react";
 
 export default async function DashboardPage() {
@@ -132,6 +135,15 @@ export default async function DashboardPage() {
             <Badge variant="outline" className="capitalize text-xs font-semibold">
               {modeLabels[creatorMode] || creatorMode}
             </Badge>
+            {profile?.is_superadmin ? (
+              <Badge variant="outline" className="text-xs font-semibold border-amber-500/40 bg-amber-500/10 text-amber-500 flex items-center gap-1">
+                <ShieldCheck className="h-3 w-3" /> Superadmin
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs font-semibold gap-1 text-primary">
+                <Sparkles className="h-3 w-3" /> Akun Kreator Beta
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground">
             Workspace:{" "}
@@ -143,6 +155,14 @@ export default async function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {profile?.is_superadmin && (
+            <Link href="/admin">
+              <Button variant="outline" size="sm" className="gap-1.5 border-amber-500/30 text-amber-500 hover:bg-amber-500/10 shadow-xs">
+                <ShieldCheck className="h-4 w-4" />
+                <span>Admin Console</span>
+              </Button>
+            </Link>
+          )}
           <Link href="/creator-profile">
             <Button size="sm" className="gap-1.5 shadow-sm">
               <Sparkles className="h-4 w-4" />
@@ -153,6 +173,31 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      {/* Missing Workspace / Database Migration Alert */}
+      {!currentWorkspace && (
+        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-5 text-foreground space-y-2 animate-in fade-in-50">
+          <div className="flex items-center gap-2 text-amber-500 font-bold text-sm">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span>Database Supabase Belum Dimigrasi / Ruang Kerja Belum Ditemukan</span>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Aplikasi mendeteksi belum ada tabel <code className="bg-muted px-1.5 py-0.5 rounded text-foreground font-mono">public.workspaces</code> di project Supabase Anda. Seluruh halaman studio, riset, dan strategi memerlukan ruang kerja aktif sehingga Anda otomatis diarahkan kembali ke dashboard sebelum database siap.
+          </p>
+          <div className="text-xs pt-1 flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-foreground">Solusi:</span>
+            <span className="text-muted-foreground">Terapkan migrasi database agar seluruh fitur menu dapat menyimpan dan memproses data Anda.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Beginner Quickstart Guide */}
+      <BeginnerGuideCard
+        hasDna={hasDna}
+        hasNiche={hasSelectedNiche}
+        hasPillars={activePillars.length > 0}
+        hasScripts={contentPackages.length > 0}
+      />
 
       {/* 2. Setup Progress & Active Creator Intelligence Card */}
       <div className="grid gap-6 md:grid-cols-3">

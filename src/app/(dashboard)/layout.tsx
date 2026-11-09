@@ -19,8 +19,13 @@ export default async function DashboardLayout({
     redirect("/sign-in");
   }
 
-  const profile = await ProfileService.getProfile(user.id);
-  let workspaces = await WorkspaceService.getWorkspacesForUser(user.id);
+  const [profile, fetchedWorkspaces, activeWorkspaceCookie] = await Promise.all([
+    ProfileService.getProfile(user.id),
+    WorkspaceService.getWorkspacesForUser(user.id),
+    getValidatedActiveWorkspaceId(),
+  ]);
+
+  let workspaces = fetchedWorkspaces;
 
   // Enforce personal owned workspace invariant if user owns zero active workspaces
   const hasOwnedWorkspace = workspaces.some((ws) => ws.role === "owner");
@@ -37,7 +42,6 @@ export default async function DashboardLayout({
     workspaces = await WorkspaceService.getWorkspacesForUser(user.id);
   }
 
-  const activeWorkspaceCookie = await getValidatedActiveWorkspaceId();
   const currentWorkspace =
     workspaces.find((w) => w.id === activeWorkspaceCookie) || workspaces[0];
 
@@ -50,10 +54,12 @@ export default async function DashboardLayout({
       ).balance
     : 50;
 
+  const isSuperadmin = Boolean(profile?.is_superadmin);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* Sidebar */}
-      <Sidebar />
+      <Sidebar isSuperadmin={isSuperadmin} />
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden">
@@ -64,6 +70,7 @@ export default async function DashboardLayout({
           user={{
             email: user.email,
             fullName: profile?.full_name,
+            isSuperadmin,
           }}
         />
 

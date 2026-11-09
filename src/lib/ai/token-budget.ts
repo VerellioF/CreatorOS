@@ -45,6 +45,8 @@ export const AI_OPERATION_CREDIT_COSTS = {
   video_generation: 5,
   timeline_export: 4,
   subtitle_generation: 1,
+  analytics_diagnostics_generation: 0,
+  ai_assistant_chat: 1,
 } as const;
 
 export type AiOperationType = keyof typeof AI_OPERATION_CREDIT_COSTS;

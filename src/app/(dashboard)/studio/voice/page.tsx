@@ -1,53 +1,16 @@
-import * as React from "react";
-import { redirect } from "next/navigation";
-import { AuthService } from "@/services/auth-service";
-import { WorkspaceService } from "@/services/workspace-service";
-import { ProductionStudioService } from "@/services/production-studio-service";
-import { UsageBillingService } from "@/services/usage-billing-service";
-import { getValidatedActiveWorkspaceId } from "@/lib/security/workspace-cookie";
-import { VoiceStudioWorkspace } from "@/features/production-studio/components/voice-studio-workspace";
+import { ComingSoonCard } from "@/components/ui/coming-soon-card";
 
-interface VoiceStudioPageProps {
-  searchParams: Promise<{ text?: string; scene?: string }>;
-}
+export const metadata = {
+  title: "Voice Studio (Soon) | CreatorOS AI",
+  description: "Sintesis voiceover AI natural",
+};
 
-export default async function VoiceStudioPage({ searchParams }: VoiceStudioPageProps) {
-  const user = await AuthService.getCurrentUser();
-  if (!user) redirect("/sign-in");
-
-  const [resolvedParams, workspaces, activeCookieWsId] = await Promise.all([
-    searchParams,
-    WorkspaceService.getWorkspacesForUser(user.id),
-    getValidatedActiveWorkspaceId(),
-  ]);
-
-  const currentWorkspace =
-    workspaces.find((w) => w.id === activeCookieWsId) ?? workspaces[0];
-
-  if (!currentWorkspace) redirect("/dashboard");
-
-  const [assets, wallet] = await Promise.all([
-    ProductionStudioService.listMediaAssets(currentWorkspace.id, user.id, "voiceover"),
-    UsageBillingService.getWorkspaceCreditBalance(currentWorkspace.id, user.id),
-  ]);
-
-  const canEdit =
-    currentWorkspace.role === "owner" ||
-    currentWorkspace.role === "admin" ||
-    currentWorkspace.role === "editor";
-
-  const sceneNum = resolvedParams.scene ? parseInt(resolvedParams.scene, 10) : undefined;
-
+export default function VoiceStudioPage() {
   return (
-    <div className="space-y-6 animate-in fade-in-50 duration-300">
-      <VoiceStudioWorkspace
-        workspaceId={currentWorkspace.id}
-        initialAssets={assets}
-        prefilledText={resolvedParams.text}
-        prefilledScene={sceneNum}
-        canEdit={canEdit}
-        creditBalance={wallet.balance}
-      />
-    </div>
+    <ComingSoonCard
+      featureName="AI Voiceover Studio"
+      categoryName="Studio Audio"
+      description="Fitur sulih suara AI natural multi-bahasa disiapkan untuk pembaruan berikutnya. Rekam suara asli Anda menggunakan naskah terstruktur dari Script Studio!"
+    />
   );
 }

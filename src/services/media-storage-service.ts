@@ -64,6 +64,7 @@ export class MediaStorageService {
 
   /**
    * Reads media file buffer and metadata by ID.
+   * Defends strictly against path traversal attacks.
    */
   static async getMediaFile(id: string): Promise<{
     buffer: Buffer;
@@ -72,19 +73,33 @@ export class MediaStorageService {
     filename: string;
     workspaceId?: string;
   } | null> {
-    const storageDir = this.getStorageDir();
-    const metaPath = path.join(storageDir, `${id}.meta.json`);
+    if (!id || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) {
+      return null;
+    }
 
-    if (!fs.existsSync(metaPath)) {
+    const storageDir = path.resolve(this.getStorageDir());
+    const metaPath = path.resolve(path.join(storageDir, `${id}.meta.json`));
+
+    if (!metaPath.startsWith(storageDir) || !fs.existsSync(metaPath)) {
       return null;
     }
 
     try {
       const metaRaw = await fs.promises.readFile(metaPath, "utf8");
       const meta = JSON.parse(metaRaw);
-      const filePath = path.join(storageDir, meta.filename);
 
-      if (!fs.existsSync(filePath)) {
+      if (
+        typeof meta.filename !== "string" ||
+        meta.filename.includes("..") ||
+        meta.filename.includes("/") ||
+        meta.filename.includes("\\")
+      ) {
+        return null;
+      }
+
+      const filePath = path.resolve(path.join(storageDir, meta.filename));
+
+      if (!filePath.startsWith(storageDir) || !fs.existsSync(filePath)) {
         return null;
       }
 

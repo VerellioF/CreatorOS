@@ -38,8 +38,9 @@ CreatorOS AI embodies the craftsmanship and precision of modern productivity sof
 
 ## 3. TYPOGRAPHY & SPACING SYSTEM
 
-- **Primary Font Family:** Inter / Geist Sans, system fallbacks (`-apple-system`, `BlinkMacSystemFont`, `sans-serif`).
-- **Code & Metadata Font:** JetBrains Mono / Geist Mono.
+- **Primary Font Family:** **Plus Jakarta Sans** (configured via `next/font/google` and CSS variable `--font-sans`), with fallbacks (`Inter`, `-apple-system`, `BlinkMacSystemFont`, `sans-serif`).
+  - *Visibility Rationale:* Selected for high optical clarity, generous x-height, wide open apertures, and superior contrast legibility across dense dashboard data and mobile screens in Bahasa Indonesia.
+- **Code & Metadata Font:** **JetBrains Mono** (configured via `next/font/google` and CSS variable `--font-mono`), paired with `.tabular-nums` for precise alignment of token counts, timestamps, and analytics figures.
 - **Scale:**
   - Display: `32px` (2rem), Line Height `1.2`, Weight `700`
   - H1: `24px` (1.5rem), Line Height `1.3`, Weight `600`

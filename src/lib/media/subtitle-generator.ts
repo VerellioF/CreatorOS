@@ -1,8 +1,14 @@
-import { randomUUID } from "node:crypto";
 import type {
   SubtitleCue,
   SubtitleStyling,
 } from "@/lib/validation/production-schemas";
+
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).substring(2, 10);
+}
 
 function formatSrtTimestamp(seconds: number): string {
   const hrs = Math.floor(seconds / 3600);
@@ -54,7 +60,7 @@ export class SubtitleGenerator {
     if (segments.length === 0) {
       return [
         {
-          id: randomUUID(),
+          id: generateId(),
           startTimeSeconds: 0,
           endTimeSeconds: Math.max(3, totalDurationSeconds),
           text: "CreatorOS AI Subtitles",
@@ -74,7 +80,7 @@ export class SubtitleGenerator {
       currentTime += durationPerSegment;
 
       return {
-        id: `cue-${idx + 1}-${randomUUID().slice(0, 8)}`,
+        id: `cue-${idx + 1}-${generateId().slice(0, 8)}`,
         startTimeSeconds: start,
         endTimeSeconds: end,
         text: seg,

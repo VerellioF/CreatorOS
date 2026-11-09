@@ -318,20 +318,79 @@ CREATE TABLE publishing_logs (
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
--- 19. analytics_snapshots: Periodic post metrics
-CREATE TABLE analytics_snapshots (
+-- 19. content_performance_snapshots: Verified post performance with data provenance
+CREATE TABLE content_performance_snapshots (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
-    content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE NOT NULL,
+    content_item_id UUID REFERENCES content_items(id) ON DELETE SET NULL,
     platform VARCHAR(30) NOT NULL,
-    views INT DEFAULT 0,
-    likes INT DEFAULT 0,
-    comments INT DEFAULT 0,
-    shares INT DEFAULT 0,
-    saves INT DEFAULT 0,
-    watch_time_seconds NUMERIC(10,2) DEFAULT 0,
+    post_title TEXT NOT NULL,
+    post_url TEXT,
+    external_post_id TEXT,
+    published_at TIMESTAMPTZ,
     snapshot_date DATE DEFAULT CURRENT_DATE NOT NULL,
+    views INT DEFAULT 0 NOT NULL,
+    likes INT DEFAULT 0 NOT NULL,
+    comments INT DEFAULT 0 NOT NULL,
+    shares INT DEFAULT 0 NOT NULL,
+    saves INT DEFAULT 0 NOT NULL,
+    clicks INT,
+    conversions INT,
+    revenue_generated NUMERIC(14,2),
+    watch_time_seconds NUMERIC(10,2),
+    retention_rate_pct NUMERIC(5,2),
+    data_source VARCHAR(30) DEFAULT 'manual_entry' NOT NULL,
+    is_manual_entry BOOLEAN DEFAULT TRUE NOT NULL,
+    account_id UUID REFERENCES social_accounts(id) ON DELETE SET NULL,
+    last_synced_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 20. analytics_insights: Deep AI analyst reports with traceable evidence
+CREATE TABLE analytics_insights (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    analysis_type VARCHAR(50) DEFAULT 'comprehensive' NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    performance_grade VARCHAR(5) NOT NULL,
+    top_performing_ids JSONB DEFAULT '[]'::jsonb NOT NULL,
+    weak_performing_ids JSONB DEFAULT '[]'::jsonb NOT NULL,
+    content_patterns JSONB DEFAULT '{}'::jsonb NOT NULL,
+    audience_response JSONB DEFAULT '{}'::jsonb NOT NULL,
+    strategy_alignment JSONB DEFAULT '{}'::jsonb NOT NULL,
+    recommendations JSONB DEFAULT '[]'::jsonb NOT NULL,
+    model_id VARCHAR(50) DEFAULT 'gemini-1.5-flash',
+    tokens_used INT DEFAULT 0 NOT NULL,
+    cost_usd NUMERIC(10,6) DEFAULT 0.000000 NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 21. support_tickets: Customer support ticketing system
+CREATE TABLE support_tickets (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE CASCADE NOT NULL,
+    ticket_number VARCHAR(20) NOT NULL UNIQUE,
+    subject TEXT NOT NULL,
+    category VARCHAR(30) NOT NULL,
+    priority VARCHAR(20) DEFAULT 'medium' NOT NULL,
+    status VARCHAR(20) DEFAULT 'open' NOT NULL,
+    message TEXT NOT NULL,
+    resolution_notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 22. data_retention_logs: Audit log of automated data retention cleanups
+CREATE TABLE data_retention_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+    policy_name VARCHAR(50) NOT NULL,
+    items_purged INT DEFAULT 0 NOT NULL,
+    details JSONB DEFAULT '{}'::jsonb NOT NULL,
+    executed_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 ```
 
@@ -600,6 +659,124 @@ CREATE TABLE workflow_logs (
 );
 ```
 
+### 2.10 Phase 6: Publishing Center, SaaS Monetization & Admin Tables
+
+```sql
+-- 36. saas_plans: Configurable subscription pricing tiers
+CREATE TABLE saas_plans (
+    id VARCHAR(30) PRIMARY KEY, -- 'free' | 'creator' | 'pro' | 'business'
+    name TEXT NOT NULL,
+    price_idr INT NOT NULL,
+    monthly_credits INT NOT NULL,
+    max_workspaces INT NOT NULL,
+    max_members_per_workspace INT NOT NULL,
+    max_storage_mb INT NOT NULL,
+    features JSONB NOT NULL DEFAULT '[]'::jsonb,
+    is_active BOOLEAN DEFAULT TRUE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 37. subscriptions: Active workspace SaaS subscriptions
+CREATE TABLE subscriptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL UNIQUE,
+    plan_tier VARCHAR(30) REFERENCES saas_plans(id) DEFAULT 'free' NOT NULL,
+    status VARCHAR(20) DEFAULT 'active' NOT NULL, -- 'active' | 'past_due' | 'canceled' | 'trialing'
+    billing_cycle VARCHAR(20) DEFAULT 'monthly' NOT NULL, -- 'monthly' | 'yearly'
+    current_period_start TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    current_period_end TIMESTAMPTZ NOT NULL,
+    cancel_at_period_end BOOLEAN DEFAULT FALSE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 38. payment_transactions: Verified Midtrans payment records
+CREATE TABLE payment_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    order_id TEXT NOT NULL UNIQUE,
+    plan_tier VARCHAR(30) REFERENCES saas_plans(id) NOT NULL,
+    gross_amount NUMERIC(12,2) NOT NULL,
+    payment_type VARCHAR(50),
+    transaction_status VARCHAR(30) DEFAULT 'pending' NOT NULL,
+    fraud_status VARCHAR(30),
+    snap_token TEXT,
+    snap_redirect_url TEXT,
+    midtrans_response JSONB,
+    settled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 39. social_accounts: Connected publisher credentials & capability profiles
+CREATE TABLE social_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    platform VARCHAR(30) NOT NULL, -- 'tiktok' | 'instagram' | 'youtube' | 'facebook' | 'shopee'
+    account_name TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    avatar_url TEXT,
+    access_token_encrypted TEXT,
+    refresh_token_encrypted TEXT,
+    token_expires_at TIMESTAMPTZ,
+    capabilities JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status VARCHAR(20) DEFAULT 'connected' NOT NULL, -- 'connected' | 'expired' | 'disconnected' | 'error'
+    last_error TEXT,
+    connected_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    UNIQUE(workspace_id, platform, account_id)
+);
+
+-- 40. publishing_jobs: Publishing schedule, direct upload & manual export jobs
+CREATE TABLE publishing_jobs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    content_item_id UUID REFERENCES content_items(id) ON DELETE CASCADE NOT NULL,
+    social_account_id UUID REFERENCES social_accounts(id) ON DELETE SET NULL,
+    platform VARCHAR(30) NOT NULL,
+    title TEXT NOT NULL,
+    caption TEXT,
+    media_asset_id UUID REFERENCES media_assets(id) ON DELETE SET NULL,
+    media_url TEXT,
+    status VARCHAR(30) DEFAULT 'draft' NOT NULL, -- 'draft' | 'scheduled' | 'publishing' | 'published' | 'failed' | 'manual_export_ready'
+    scheduled_for TIMESTAMPTZ,
+    published_at TIMESTAMPTZ,
+    attempts INT DEFAULT 0 NOT NULL,
+    max_attempts INT DEFAULT 3 NOT NULL,
+    external_post_id TEXT,
+    external_post_url TEXT,
+    error_message TEXT,
+    manual_export_data JSONB,
+    created_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 41. publishing_logs: Action logs for publish execution & status confirmation
+CREATE TABLE publishing_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_id UUID REFERENCES publishing_jobs(id) ON DELETE CASCADE NOT NULL,
+    workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE NOT NULL,
+    action VARCHAR(50) NOT NULL,
+    status VARCHAR(20) NOT NULL, -- 'info' | 'success' | 'warning' | 'error'
+    message TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}'::jsonb NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+
+-- 42. system_settings: Admin system-wide flags and provider configs
+CREATE TABLE system_settings (
+    key VARCHAR(80) PRIMARY KEY,
+    value JSONB NOT NULL,
+    description TEXT,
+    updated_by UUID REFERENCES profiles(id) ON DELETE SET NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
+);
+```
+
 ---
 
 ## 3. COMPREHENSIVE INDEXING STRATEGY
@@ -644,7 +821,18 @@ ALTER TABLE workflow_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workflow_steps ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workflow_schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workflow_logs ENABLE ROW LEVEL SECURITY;
--- [Enabled on all 35 tables]
+ALTER TABLE saas_plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE social_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE publishing_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE publishing_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE content_performance_snapshots ENABLE ROW LEVEL SECURITY;
+ALTER TABLE analytics_insights ENABLE ROW LEVEL SECURITY;
+ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE data_retention_logs ENABLE ROW LEVEL SECURITY;
+-- [Enabled on 100% of tables (39/39) with strict tenant isolation]
 ```
 
 Standard helper function to check workspace membership:

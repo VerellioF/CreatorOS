@@ -9,7 +9,10 @@ export default function AuthLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-background p-4 sm:p-8">
+    <div className="relative min-h-screen flex flex-col justify-between bg-background p-4 sm:p-8 overflow-hidden selection:bg-primary/20 selection:text-primary">
+      {/* Subtle Ambient Background Glow */}
+      <div className="pointer-events-none absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[300px] bg-primary/10 dark:bg-primary/15 rounded-full blur-[120px] -z-10" />
+
       {/* Top Bar */}
       <div className="flex items-center justify-between w-full max-w-6xl mx-auto">
         <Link href="/" className="flex items-center gap-2">

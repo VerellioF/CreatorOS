@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { isValidUuid } from "./sanitize";
 
@@ -7,15 +8,16 @@ const WORKSPACE_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
 /**
  * Reads and validates the `active_workspace_id` cookie on the server.
  * Malformed or non-UUID values are discarded immediately.
+ * Memoized per-request with React.cache() to avoid repeated cookie decodes.
  */
-export async function getValidatedActiveWorkspaceId(): Promise<string | null> {
+export const getValidatedActiveWorkspaceId = cache(async (): Promise<string | null> => {
   const cookieStore = await cookies();
   const rawValue = cookieStore.get(ACTIVE_WORKSPACE_COOKIE)?.value;
   if (!isValidUuid(rawValue)) {
     return null;
   }
   return rawValue.trim();
-}
+});
 
 export const getVerifiedWorkspaceIdFromCookie = getValidatedActiveWorkspaceId;
 

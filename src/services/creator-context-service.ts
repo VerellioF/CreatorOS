@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { WorkspaceService } from "@/services/workspace-service";
 import { normalizeSupportedAiModel } from "@/lib/validation/workspace-schemas";
@@ -80,11 +81,12 @@ export class CreatorContextService {
   /**
    * Assembles the canonical `WorkspaceCreatorContext` for any module in CreatorOS AI.
    * Enforces server-side workspace membership check (`viewer`+) before reading tenant data.
+   * Memoized per-request with React.cache() to prevent 6x redundant DB queries.
    */
-  static async getWorkspaceCreatorContext(
+  static getWorkspaceCreatorContext = cache(async (
     workspaceId: string,
     userId: string
-  ): Promise<WorkspaceCreatorContext> {
+  ): Promise<WorkspaceCreatorContext> => {
     const hasAccess = await WorkspaceService.verifyWorkspaceAccess(
       userId,
       workspaceId,
@@ -326,5 +328,5 @@ export class CreatorContextService {
       brandContext,
       activeStrategy,
     };
-  }
+  });
 }

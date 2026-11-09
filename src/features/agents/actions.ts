@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getVerifiedWorkspaceIdFromCookie } from "@/lib/security/workspace-cookie";
 import { createClient } from "@/lib/supabase/server";
+import { WorkspaceService } from "@/services/workspace-service";
 import { WorkflowOrchestratorService } from "@/services/workflow-orchestrator-service";
 import { WorkflowAutomationService } from "@/services/workflow-automation-service";
 import type { WorkflowType } from "@/lib/supabase/types";
@@ -13,6 +14,29 @@ export interface ActionResult<T> {
   error?: string;
 }
 
+async function resolveWorkspaceContext(): Promise<
+  { workspaceId: string; userId?: string } | { error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let workspaceId = await getVerifiedWorkspaceIdFromCookie();
+  if (!workspaceId && user?.id) {
+    const workspaces = await WorkspaceService.getWorkspacesForUser(user.id);
+    if (workspaces && workspaces.length > 0) {
+      workspaceId = workspaces[0].id;
+    }
+  }
+
+  if (!workspaceId) {
+    return { error: "No active workspace selected or found" };
+  }
+
+  return { workspaceId, userId: user?.id };
+}
+
 export async function startWorkflowAction(
   workflowType: WorkflowType,
   title: string,
@@ -20,17 +44,12 @@ export async function startWorkflowAction(
   autoApproveMilestones = false
 ): Promise<ActionResult<{ runId: string }>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
     const run = await WorkflowOrchestratorService.startWorkflow({
-      workspaceId,
-      userId: user?.id,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
       workflowType,
       title,
       initialParameters,
@@ -48,10 +67,10 @@ export async function executeNextStepAction(
   runId: string
 ): Promise<ActionResult<{ nextStatus: string }>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    const result = await WorkflowOrchestratorService.executeCurrentStep(runId, workspaceId);
+    const result = await WorkflowOrchestratorService.executeCurrentStep(runId, context.workspaceId);
     revalidatePath("/agents");
     return { success: true, data: { nextStatus: result.nextStatus } };
   } catch (err: any) {
@@ -64,15 +83,15 @@ export async function approveStepAction(
   stepIndex: number
 ): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    await WorkflowOrchestratorService.approveStep(runId, stepIndex, user?.id || "", workspaceId);
+    await WorkflowOrchestratorService.approveStep(
+      runId,
+      stepIndex,
+      context.userId || "",
+      context.workspaceId
+    );
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {
@@ -82,10 +101,10 @@ export async function approveStepAction(
 
 export async function pauseWorkflowAction(runId: string): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    await WorkflowOrchestratorService.pauseWorkflow(runId, workspaceId);
+    await WorkflowOrchestratorService.pauseWorkflow(runId, context.workspaceId);
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {
@@ -95,10 +114,10 @@ export async function pauseWorkflowAction(runId: string): Promise<ActionResult<b
 
 export async function resumeWorkflowAction(runId: string): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    await WorkflowOrchestratorService.resumeWorkflow(runId, workspaceId);
+    await WorkflowOrchestratorService.resumeWorkflow(runId, context.workspaceId);
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {
@@ -111,10 +130,10 @@ export async function cancelWorkflowAction(
   reason?: string
 ): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    await WorkflowOrchestratorService.cancelWorkflow(runId, workspaceId, reason);
+    await WorkflowOrchestratorService.cancelWorkflow(runId, context.workspaceId, reason);
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {
@@ -130,17 +149,12 @@ export async function createWorkflowScheduleAction(
   maxAutonomousTurns = 5
 ): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
-
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
     await WorkflowAutomationService.createSchedule({
-      workspaceId,
-      userId: user?.id,
+      workspaceId: context.workspaceId,
+      userId: context.userId,
       workflowType,
       name,
       cronExpression,
@@ -160,10 +174,14 @@ export async function toggleWorkflowScheduleAction(
   isActive: boolean
 ): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    await WorkflowAutomationService.toggleScheduleActive(scheduleId, workspaceId, isActive);
+    await WorkflowAutomationService.toggleScheduleActive(
+      scheduleId,
+      context.workspaceId,
+      isActive
+    );
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {
@@ -175,10 +193,10 @@ export async function deleteWorkflowScheduleAction(
   scheduleId: string
 ): Promise<ActionResult<boolean>> {
   try {
-    const workspaceId = await getVerifiedWorkspaceIdFromCookie();
-    if (!workspaceId) return { success: false, error: "No active workspace selected" };
+    const context = await resolveWorkspaceContext();
+    if ("error" in context) return { success: false, error: context.error };
 
-    await WorkflowAutomationService.deleteSchedule(scheduleId, workspaceId);
+    await WorkflowAutomationService.deleteSchedule(scheduleId, context.workspaceId);
     revalidatePath("/agents");
     return { success: true, data: true };
   } catch (err: any) {

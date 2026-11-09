@@ -60,7 +60,7 @@ export function SignUpForm() {
   };
 
   return (
-    <Card className="border-border shadow-xl">
+    <Card className="border-border/80 bg-card/95 backdrop-blur-sm shadow-xl">
       <form onSubmit={handleSubmit}>
         <CardHeader className="space-y-1">
           <CardTitle className="text-xl font-bold tracking-tight">Daftar Akun Baru</CardTitle>

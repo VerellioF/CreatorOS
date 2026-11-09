@@ -22,9 +22,14 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # Environment files
-.env*.local
-.env
+.env*
 !.env.example
+
+# Backups and Database snapshots
+backups/
+*.backup
+*.dump
+*.sql.bak
 
 # Vercel
 .vercel

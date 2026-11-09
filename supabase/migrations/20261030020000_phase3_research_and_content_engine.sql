@@ -557,16 +557,14 @@ BEGIN
     ]
     LOOP
         EXECUTE pg_catalog.format(
-            'DROP TRIGGER IF EXISTS trigger_%I_updated_at ON public.%I;
-             CREATE TRIGGER trigger_%I_updated_at
+            'CREATE OR REPLACE TRIGGER trigger_%I_updated_at
                  BEFORE UPDATE ON public.%I
                  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();',
             tbl, tbl, tbl, tbl
         );
 
         EXECUTE pg_catalog.format(
-            'DROP TRIGGER IF EXISTS trigger_%I_immutable_keys ON public.%I;
-             CREATE TRIGGER trigger_%I_immutable_keys
+            'CREATE OR REPLACE TRIGGER trigger_%I_immutable_keys
                  BEFORE UPDATE ON public.%I
                  FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();',
             tbl, tbl, tbl, tbl
@@ -575,23 +573,19 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS trigger_research_sources_immutable_keys ON public.research_sources;
-CREATE TRIGGER trigger_research_sources_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_research_sources_immutable_keys
     BEFORE UPDATE ON public.research_sources
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();
 
-DROP TRIGGER IF EXISTS trigger_content_strategies_tenant_fk ON public.content_strategies;
-CREATE TRIGGER trigger_content_strategies_tenant_fk
+CREATE OR REPLACE TRIGGER trigger_content_strategies_tenant_fk
     BEFORE INSERT OR UPDATE ON public.content_strategies
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase3_tenant_fk_integrity();
 
-DROP TRIGGER IF EXISTS trigger_content_ideas_tenant_fk ON public.content_ideas;
-CREATE TRIGGER trigger_content_ideas_tenant_fk
+CREATE OR REPLACE TRIGGER trigger_content_ideas_tenant_fk
     BEFORE INSERT OR UPDATE ON public.content_ideas
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase3_tenant_fk_integrity();
 
-DROP TRIGGER IF EXISTS trigger_content_items_tenant_fk ON public.content_items;
-CREATE TRIGGER trigger_content_items_tenant_fk
+CREATE OR REPLACE TRIGGER trigger_content_items_tenant_fk
     BEFORE INSERT OR UPDATE ON public.content_items
     FOR EACH ROW EXECUTE FUNCTION public.enforce_phase3_tenant_fk_integrity();
 

@@ -200,7 +200,9 @@ ALTER TABLE creatoros_internal.trusted_operations
     ADD COLUMN IF NOT EXISTS expected_old_role VARCHAR(20),
     ADD COLUMN IF NOT EXISTS expected_new_role VARCHAR(20);
 
-DELETE FROM creatoros_internal.trusted_operations;
+DO $$ BEGIN
+    DELETE FROM creatoros_internal.trusted_operations;
+END $$;
 
 ALTER TABLE creatoros_internal.trusted_operations
     ALTER COLUMN op_type TYPE VARCHAR(40),
@@ -273,7 +275,9 @@ CREATE TABLE IF NOT EXISTS creatoros_internal.pending_workspace_inserts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now()
 );
 
-DELETE FROM creatoros_internal.pending_workspace_inserts;
+DO $$ BEGIN
+    DELETE FROM creatoros_internal.pending_workspace_inserts;
+END $$;
 
 ALTER TABLE creatoros_internal.pending_workspace_inserts OWNER TO postgres;
 ALTER TABLE creatoros_internal.pending_workspace_inserts ENABLE ROW LEVEL SECURITY;
@@ -523,23 +527,19 @@ $$;
 ALTER FUNCTION public.set_updated_at() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS trigger_profiles_updated_at ON public.profiles;
-CREATE TRIGGER trigger_profiles_updated_at
+CREATE OR REPLACE TRIGGER trigger_profiles_updated_at
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_workspaces_updated_at ON public.workspaces;
-CREATE TRIGGER trigger_workspaces_updated_at
+CREATE OR REPLACE TRIGGER trigger_workspaces_updated_at
     BEFORE UPDATE ON public.workspaces
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_workspace_members_updated_at ON public.workspace_members;
-CREATE TRIGGER trigger_workspace_members_updated_at
+CREATE OR REPLACE TRIGGER trigger_workspace_members_updated_at
     BEFORE UPDATE ON public.workspace_members
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
-DROP TRIGGER IF EXISTS trigger_workspace_settings_updated_at ON public.workspace_settings;
-CREATE TRIGGER trigger_workspace_settings_updated_at
+CREATE OR REPLACE TRIGGER trigger_workspace_settings_updated_at
     BEFORE UPDATE ON public.workspace_settings
     FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
@@ -616,18 +616,15 @@ $$;
 ALTER FUNCTION public.enforce_immutable_tenant_keys() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.enforce_immutable_tenant_keys() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS trigger_workspaces_immutable_keys ON public.workspaces;
-CREATE TRIGGER trigger_workspaces_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_workspaces_immutable_keys
     BEFORE UPDATE ON public.workspaces
     FOR EACH ROW EXECUTE FUNCTION public.enforce_immutable_tenant_keys();
 
-DROP TRIGGER IF EXISTS trigger_workspace_settings_immutable_keys ON public.workspace_settings;
-CREATE TRIGGER trigger_workspace_settings_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_workspace_settings_immutable_keys
     BEFORE UPDATE ON public.workspace_settings
     FOR EACH ROW EXECUTE FUNCTION public.enforce_immutable_tenant_keys();
 
-DROP TRIGGER IF EXISTS trigger_profiles_immutable_keys ON public.profiles;
-CREATE TRIGGER trigger_profiles_immutable_keys
+CREATE OR REPLACE TRIGGER trigger_profiles_immutable_keys
     BEFORE UPDATE ON public.profiles
     FOR EACH ROW EXECUTE FUNCTION public.enforce_immutable_tenant_keys();
 
@@ -676,8 +673,7 @@ $$;
 ALTER FUNCTION public.prepare_workspace_insert() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.prepare_workspace_insert() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS trigger_prepare_workspace_insert ON public.workspaces;
-CREATE TRIGGER trigger_prepare_workspace_insert
+CREATE OR REPLACE TRIGGER trigger_prepare_workspace_insert
     BEFORE INSERT ON public.workspaces
     FOR EACH ROW EXECUTE FUNCTION public.prepare_workspace_insert();
 
@@ -1203,7 +1199,7 @@ BEGIN
                   AND wm.role = 'owner';
 
                 IF v_owner_count <= 1 THEN
-                    RAISE EXCEPTION 'Owner protection violation: Cannot delete the last remaining owner while workspace exists.';
+                    RAISE EXCEPTION 'Owner protection violation: Cannot remove the last remaining owner while workspace exists.';
                 END IF;
             END IF;
             RETURN OLD;
@@ -1417,7 +1413,7 @@ BEGIN
               AND wm.role = 'owner';
 
             IF v_owner_count <= 1 THEN
-                RAISE EXCEPTION 'Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or delete the workspace.';
+                RAISE EXCEPTION 'Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or remove the workspace.';
             END IF;
         END IF;
 
@@ -1431,8 +1427,7 @@ $$;
 ALTER FUNCTION public.enforce_workspace_member_safety() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.enforce_workspace_member_safety() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS trigger_workspace_member_safety ON public.workspace_members;
-CREATE TRIGGER trigger_workspace_member_safety
+CREATE OR REPLACE TRIGGER trigger_workspace_member_safety
     BEFORE INSERT OR UPDATE OR DELETE ON public.workspace_members
     FOR EACH ROW EXECUTE FUNCTION public.enforce_workspace_member_safety();
 
@@ -1740,7 +1735,7 @@ BEGIN
           AND wm.role = 'owner';
 
         IF v_owner_count <= 1 THEN
-            RAISE EXCEPTION 'Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or delete the workspace.';
+            RAISE EXCEPTION 'Owner protection violation: The last remaining owner cannot leave or be removed. Transfer ownership or remove the workspace.';
         END IF;
     END IF;
 
@@ -2053,7 +2048,7 @@ BEGIN
     FOR UPDATE;
 
     IF v_caller_role IS NULL OR v_caller_role <> 'owner' THEN
-        RAISE EXCEPTION 'Unauthorized: Only a workspace owner can archive or delete a workspace.';
+        RAISE EXCEPTION 'Unauthorized: Only a workspace owner can archive or remove a workspace.';
     END IF;
 
     SELECT pg_catalog.count(*) INTO v_other_active_owned
@@ -2119,8 +2114,7 @@ $$;
 ALTER FUNCTION public.handle_new_workspace() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.handle_new_workspace() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS on_workspace_created ON public.workspaces;
-CREATE TRIGGER on_workspace_created
+CREATE OR REPLACE TRIGGER on_workspace_created
     AFTER INSERT ON public.workspaces
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_workspace();
 
@@ -2146,8 +2140,7 @@ $$;
 ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
+CREATE OR REPLACE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
@@ -2212,7 +2205,7 @@ BEGIN
 
             IF v_other_owners = 0 THEN
                 IF v_ws.deleted_at IS NULL AND v_other_members > 0 THEN
-                    RAISE EXCEPTION 'Account deletion blocked: User % is the sole remaining owner of shared workspace %. Transfer ownership or delete the workspace before deleting this account.',
+                    RAISE EXCEPTION 'Account deletion blocked: User % is the sole remaining owner of shared workspace %. Transfer ownership or remove the workspace before deleting this account.',
                         OLD.id, v_ws.id;
                 ELSE
                     -- Sole-member personal workspace OR sole-owner soft-deleted workspace:
@@ -2230,8 +2223,7 @@ $$;
 ALTER FUNCTION public.handle_auth_user_deletion() OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.handle_auth_user_deletion() FROM PUBLIC, anon, authenticated, service_role;
 
-DROP TRIGGER IF EXISTS before_auth_user_deleted ON auth.users;
-CREATE TRIGGER before_auth_user_deleted
+CREATE OR REPLACE TRIGGER before_auth_user_deleted
     BEFORE DELETE ON auth.users
     FOR EACH ROW EXECUTE FUNCTION public.handle_auth_user_deletion();
 
@@ -2345,6 +2337,7 @@ ALTER TABLE public.workspaces ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.workspace_settings ENABLE ROW LEVEL SECURITY;
 
+DO $$ BEGIN
 DROP POLICY IF EXISTS "profiles_select_own_or_coworkers" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 DROP POLICY IF EXISTS "profiles_update_own" ON public.profiles;
@@ -2362,6 +2355,7 @@ DROP POLICY IF EXISTS "workspace_members_delete_admin" ON public.workspace_membe
 DROP POLICY IF EXISTS "workspace_settings_select_member" ON public.workspace_settings;
 DROP POLICY IF EXISTS "workspace_settings_update_admin" ON public.workspace_settings;
 DROP POLICY IF EXISTS "workspace_settings_insert_admin" ON public.workspace_settings;
+END $$;
 
 -- PROFILES POLICIES
 CREATE POLICY "profiles_select_own_or_coworkers" ON public.profiles

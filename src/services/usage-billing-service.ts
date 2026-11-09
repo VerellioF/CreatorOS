@@ -63,7 +63,7 @@ export class UsageBillingService {
       .maybeSingle();
 
     if (error || !data) {
-      return { balance: 50, monthlyAllowance: 50 };
+      return { balance: 20, monthlyAllowance: 20 };
     }
 
     const row = data as Pick<CreditWalletRow, "balance" | "monthly_allowance">;
@@ -203,8 +203,8 @@ export class UsageBillingService {
     );
 
     return {
-      balance: wallet?.balance ?? 50,
-      monthlyAllowance: wallet?.monthly_allowance ?? 50,
+      balance: wallet?.balance ?? 20,
+      monthlyAllowance: wallet?.monthly_allowance ?? 20,
       totalTokensUsedRecent,
       totalCostUsdRecent,
       recentUsage,

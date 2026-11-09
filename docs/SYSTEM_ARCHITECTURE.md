@@ -105,5 +105,25 @@ Multi-tenancy in CreatorOS AI is rooted in the `workspaces` table:
    - `AuthorizationError`: Workspace or permission rejections.
    - `ProviderError`: AI or external integration failures with retry metadata.
    - `InsufficientCreditsError`: Quota and credit exhaustion.
-2. **Sentry Integration:** Client and server exception tracking with scrubbed PII.
+2. **Sentry & Centralized ErrorTracker (`src/lib/monitoring/error-tracker.ts`):** Client and server exception tracking with scrubbed PII, breadcrumbs, and severity levels.
 3. **Usage & Audit Logging:** Persistent telemetry in `ai_provider_usage` and `audit_logs`.
+4. **Health Probes:** `/api/health`, `/api/health/live`, `/api/health/ready` for cluster orchestration and uptime monitoring.
+
+---
+
+## 5. ANALYTICS INTELLIGENCE & PRODUCTION RELIABILITY
+
+### 5.1 Analytics & Performance Tracking Architecture (`src/services/analytics-service.ts`)
+- **Data Provenance:** Strict dichotomy between authenticated connected accounts (`connected_account`) and manual creator inputs (`manual_entry`).
+- **Zero-Fabrication Guarantee:** Clicks and conversions return `null` if not tracked, with explicit "Belum ada data" states. No placeholder approximations or fake engagement numbers.
+- **Platform Comparative Analysis:** Normalized cross-platform metrics comparing TikTok, Instagram, YouTube, Facebook, and Shopee Video.
+
+### 5.2 AI Analyst Diagnostics Engine (`src/services/ai-analyst-service.ts`)
+- **Top & Weak Content Diagnosis:** Analyzes hook retention drop-offs, emotion angles, and pacing.
+- **Content Patterns & Audience Response:** Identifies formats yielding 2x+ retention and calculates viral share ratios.
+- **Strategy Alignment:** Validates post composition against active Content Pillars from Phase 3 `/strategy`.
+- **Traceable Recommendations:** Every actionable recommendation is backed by empirical evidence citing exact content IDs and performance deltas.
+
+### 5.3 Automated Data Retention & Disaster Recovery
+- **Retention Lifecycle:** Purges ephemeral generation jobs older than 30 days and debug publishing logs older than 90 days (`src/services/data-retention-service.ts`).
+- **Backup & Restore Strategy:** Automated JSON snapshots with SHA-256 integrity checksums and tested recovery procedures (`scripts/database-backup.mjs`, `scripts/database-restore.mjs`).

@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { isValidUuid } from "@/lib/security/sanitize";
 import type {
@@ -50,8 +51,9 @@ async function withSerializationRetry<T>(
 export class WorkspaceService {
   /**
    * Retrieves all active (non-archived) workspaces where user is a member.
+   * Memoized per-request with React.cache() to eliminate duplicate tenant queries.
    */
-  static async getWorkspacesForUser(userId: string): Promise<WorkspaceWithRole[]> {
+  static getWorkspacesForUser = cache(async (userId: string): Promise<WorkspaceWithRole[]> => {
     if (!isValidUuid(userId)) {
       return [];
     }
@@ -86,7 +88,7 @@ export class WorkspaceService {
         ...(item.workspace as Workspace),
         role: item.role,
       }));
-  }
+  });
 
   /**
    * Retrieves a single active workspace by ID if the user is a verified member.

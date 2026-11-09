@@ -19,7 +19,7 @@
 --      - Progress percentage is clamped between 0 and 100.
 --      - Max attempts and error logging prevent unbounded retry cascades.
 -- 4. Audit & Immutability:
---      - `set_updated_at()` and `enforce_phase2_immutable_keys()` protect primary keys
+--      - `set_updated_at()` and `enforce_immutable_tenant_keys()` protect primary keys
 --        and `workspace_id` from tampering.
 -- ==============================================================================
 
@@ -295,24 +295,21 @@ BEGIN
     ]
     LOOP
         EXECUTE pg_catalog.format(
-            'DROP TRIGGER IF EXISTS trigger_%I_updated_at ON public.%I;
-             CREATE TRIGGER trigger_%I_updated_at
+            'CREATE OR REPLACE TRIGGER trigger_%I_updated_at
                  BEFORE UPDATE ON public.%I
                  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();',
             tbl, tbl, tbl, tbl
         );
 
         EXECUTE pg_catalog.format(
-            'DROP TRIGGER IF EXISTS trigger_%I_immutable_keys ON public.%I;
-             CREATE TRIGGER trigger_%I_immutable_keys
+            'CREATE OR REPLACE TRIGGER trigger_%I_immutable_keys
                  BEFORE UPDATE ON public.%I
                  FOR EACH ROW EXECUTE FUNCTION public.enforce_phase2_immutable_keys();',
             tbl, tbl, tbl, tbl
         );
 
         EXECUTE pg_catalog.format(
-            'DROP TRIGGER IF EXISTS trigger_%I_tenant_fk ON public.%I;
-             CREATE TRIGGER trigger_%I_tenant_fk
+            'CREATE OR REPLACE TRIGGER trigger_%I_tenant_fk
                  BEFORE INSERT OR UPDATE ON public.%I
                  FOR EACH ROW EXECUTE FUNCTION public.enforce_phase4_tenant_fk_integrity();',
             tbl, tbl, tbl, tbl

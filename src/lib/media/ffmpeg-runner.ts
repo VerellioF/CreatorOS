@@ -38,7 +38,7 @@ export class FFmpegRunner {
 
     // 3. Check @ffmpeg-installer/ffmpeg
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      // eslint-disable-next-line
       const installer = require("@ffmpeg-installer/ffmpeg");
       if (installer?.path && fs.existsSync(installer.path)) {
         this.cachedBinaryPath = installer.path;

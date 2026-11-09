@@ -18,6 +18,7 @@ function isAuthRoute(pathname: string): boolean {
 function isPublicRoute(pathname: string): boolean {
   return (
     pathname === "/" ||
+    pathname === "/demo" ||
     isAuthRoute(pathname) ||
     pathname === "/auth/callback" ||
     pathname.startsWith("/auth/callback/") ||

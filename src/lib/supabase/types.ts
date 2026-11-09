@@ -92,6 +92,33 @@ export type WorkflowType =
   | "workflow_c_analytics_optimization"
   | "custom";
 
+export type PlanTier = "free" | "creator" | "pro" | "business";
+export type SubscriptionStatus = "active" | "past_due" | "canceled" | "trialing";
+export type PaymentStatus =
+  | "pending"
+  | "settlement"
+  | "capture"
+  | "deny"
+  | "expire"
+  | "cancel"
+  | "refund";
+export type PublishingJobStatus =
+  | "draft"
+  | "scheduled"
+  | "publishing"
+  | "published"
+  | "failed"
+  | "manual_export_ready";
+export type PublishingLogStatus = "info" | "success" | "warning" | "error";
+export type SocialAccountStatus = "connected" | "expired" | "disconnected" | "error";
+export type PublishingPlatform = "tiktok" | "instagram" | "youtube" | "facebook" | "shopee";
+export type PerformancePlatform = "tiktok" | "instagram" | "youtube" | "facebook" | "shopee_video" | "other";
+export type PerformanceDataSource = "connected_account" | "manual_entry" | "api_sync";
+export type InsightGrade = "A" | "B" | "C" | "D" | "F";
+export type SupportTicketCategory = "billing" | "feature_request" | "bug" | "account" | "content" | "other";
+export type SupportTicketPriority = "low" | "medium" | "high" | "urgent";
+export type SupportTicketStatus = "open" | "in_progress" | "resolved" | "closed";
+
 export type Database = {
   public: {
     Tables: {
@@ -103,6 +130,7 @@ export type Database = {
           preferred_language: string;
           theme_preference: string;
           onboarding_completed: boolean;
+          is_superadmin: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -113,6 +141,7 @@ export type Database = {
           preferred_language?: string;
           theme_preference?: string;
           onboarding_completed?: boolean;
+          is_superadmin?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -123,6 +152,7 @@ export type Database = {
           preferred_language?: string;
           theme_preference?: string;
           onboarding_completed?: boolean;
+          is_superadmin?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -420,30 +450,36 @@ export type Database = {
         Row: {
           id: string;
           wallet_id: string;
+          user_id: string | null;
           amount: number;
           balance_after: number;
           transaction_type: "monthly_grant" | "top_up" | "ai_generation" | "refund";
           reference_id: string | null;
+          idempotency_key: string | null;
           description: string | null;
           created_at: string;
         };
         Insert: {
           id?: string;
           wallet_id: string;
+          user_id?: string | null;
           amount: number;
           balance_after: number;
           transaction_type: "monthly_grant" | "top_up" | "ai_generation" | "refund";
           reference_id?: string | null;
+          idempotency_key?: string | null;
           description?: string | null;
           created_at?: string;
         };
         Update: {
           id?: string;
           wallet_id?: string;
+          user_id?: string | null;
           amount?: number;
           balance_after?: number;
           transaction_type?: "monthly_grant" | "top_up" | "ai_generation" | "refund";
           reference_id?: string | null;
+          idempotency_key?: string | null;
           description?: string | null;
           created_at?: string;
         };
@@ -1478,6 +1514,537 @@ export type Database = {
         };
         Relationships: [];
       };
+      saas_plans: {
+        Row: {
+          id: PlanTier;
+          name: string;
+          price_idr: number;
+          monthly_credits: number;
+          max_workspaces: number;
+          max_members_per_workspace: number;
+          max_storage_mb: number;
+          features: Json;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id: PlanTier;
+          name: string;
+          price_idr: number;
+          monthly_credits: number;
+          max_workspaces: number;
+          max_members_per_workspace: number;
+          max_storage_mb: number;
+          features?: Json;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: PlanTier;
+          name?: string;
+          price_idr?: number;
+          monthly_credits?: number;
+          max_workspaces?: number;
+          max_members_per_workspace?: number;
+          max_storage_mb?: number;
+          features?: Json;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      subscriptions: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          plan_tier: PlanTier;
+          status: SubscriptionStatus;
+          billing_cycle: "monthly" | "yearly";
+          current_period_start: string;
+          current_period_end: string;
+          cancel_at_period_end: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          plan_tier?: PlanTier;
+          status?: SubscriptionStatus;
+          billing_cycle?: "monthly" | "yearly";
+          current_period_start?: string;
+          current_period_end: string;
+          cancel_at_period_end?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          plan_tier?: PlanTier;
+          status?: SubscriptionStatus;
+          billing_cycle?: "monthly" | "yearly";
+          current_period_start?: string;
+          current_period_end?: string;
+          cancel_at_period_end?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      payment_transactions: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          user_id: string | null;
+          order_id: string;
+          plan_tier: PlanTier;
+          gross_amount: number;
+          payment_type: string | null;
+          transaction_status: PaymentStatus;
+          fraud_status: string | null;
+          snap_token: string | null;
+          snap_redirect_url: string | null;
+          midtrans_response: Json | null;
+          settled_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          user_id?: string | null;
+          order_id: string;
+          plan_tier: PlanTier;
+          gross_amount: number;
+          payment_type?: string | null;
+          transaction_status?: PaymentStatus;
+          fraud_status?: string | null;
+          snap_token?: string | null;
+          snap_redirect_url?: string | null;
+          midtrans_response?: Json | null;
+          settled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          user_id?: string | null;
+          order_id?: string;
+          plan_tier?: PlanTier;
+          gross_amount?: number;
+          payment_type?: string | null;
+          transaction_status?: PaymentStatus;
+          fraud_status?: string | null;
+          snap_token?: string | null;
+          snap_redirect_url?: string | null;
+          midtrans_response?: Json | null;
+          settled_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      social_accounts: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          platform: PublishingPlatform;
+          account_name: string;
+          account_id: string;
+          avatar_url: string | null;
+          access_token_encrypted: string | null;
+          refresh_token_encrypted: string | null;
+          token_expires_at: string | null;
+          capabilities: Json;
+          status: SocialAccountStatus;
+          last_error: string | null;
+          connected_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          platform: PublishingPlatform;
+          account_name: string;
+          account_id: string;
+          avatar_url?: string | null;
+          access_token_encrypted?: string | null;
+          refresh_token_encrypted?: string | null;
+          token_expires_at?: string | null;
+          capabilities?: Json;
+          status?: SocialAccountStatus;
+          last_error?: string | null;
+          connected_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          platform?: PublishingPlatform;
+          account_name?: string;
+          account_id?: string;
+          avatar_url?: string | null;
+          access_token_encrypted?: string | null;
+          refresh_token_encrypted?: string | null;
+          token_expires_at?: string | null;
+          capabilities?: Json;
+          status?: SocialAccountStatus;
+          last_error?: string | null;
+          connected_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      publishing_jobs: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          content_item_id: string;
+          social_account_id: string | null;
+          platform: PublishingPlatform;
+          title: string;
+          caption: string | null;
+          media_asset_id: string | null;
+          media_url: string | null;
+          status: PublishingJobStatus;
+          scheduled_for: string | null;
+          published_at: string | null;
+          attempts: number;
+          max_attempts: number;
+          external_post_id: string | null;
+          external_post_url: string | null;
+          error_message: string | null;
+          manual_export_data: Json | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          content_item_id: string;
+          social_account_id?: string | null;
+          platform: PublishingPlatform;
+          title: string;
+          caption?: string | null;
+          media_asset_id?: string | null;
+          media_url?: string | null;
+          status?: PublishingJobStatus;
+          scheduled_for?: string | null;
+          published_at?: string | null;
+          attempts?: number;
+          max_attempts?: number;
+          external_post_id?: string | null;
+          external_post_url?: string | null;
+          error_message?: string | null;
+          manual_export_data?: Json | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          content_item_id?: string;
+          social_account_id?: string | null;
+          platform?: PublishingPlatform;
+          title?: string;
+          caption?: string | null;
+          media_asset_id?: string | null;
+          media_url?: string | null;
+          status?: PublishingJobStatus;
+          scheduled_for?: string | null;
+          published_at?: string | null;
+          attempts?: number;
+          max_attempts?: number;
+          external_post_id?: string | null;
+          external_post_url?: string | null;
+          error_message?: string | null;
+          manual_export_data?: Json | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      publishing_logs: {
+        Row: {
+          id: string;
+          job_id: string;
+          workspace_id: string;
+          action: string;
+          status: PublishingLogStatus;
+          message: string;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_id: string;
+          workspace_id: string;
+          action: string;
+          status: PublishingLogStatus;
+          message: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_id?: string;
+          workspace_id?: string;
+          action?: string;
+          status?: PublishingLogStatus;
+          message?: string;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      system_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          description: string | null;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value: Json;
+          description?: string | null;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          key?: string;
+          value?: Json;
+          description?: string | null;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      content_performance_snapshots: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          content_item_id: string | null;
+          platform: PerformancePlatform;
+          post_title: string;
+          post_url: string | null;
+          external_post_id: string | null;
+          published_at: string | null;
+          snapshot_date: string;
+          views: number;
+          likes: number;
+          comments: number;
+          shares: number;
+          saves: number;
+          clicks: number | null;
+          conversions: number | null;
+          revenue_generated: number | null;
+          watch_time_seconds: number | null;
+          retention_rate_pct: number | null;
+          data_source: PerformanceDataSource;
+          is_manual_entry: boolean;
+          account_id: string | null;
+          last_synced_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          content_item_id?: string | null;
+          platform: PerformancePlatform;
+          post_title: string;
+          post_url?: string | null;
+          external_post_id?: string | null;
+          published_at?: string | null;
+          snapshot_date?: string;
+          views?: number;
+          likes?: number;
+          comments?: number;
+          shares?: number;
+          saves?: number;
+          clicks?: number | null;
+          conversions?: number | null;
+          revenue_generated?: number | null;
+          watch_time_seconds?: number | null;
+          retention_rate_pct?: number | null;
+          data_source?: PerformanceDataSource;
+          is_manual_entry?: boolean;
+          account_id?: string | null;
+          last_synced_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          content_item_id?: string | null;
+          platform?: PerformancePlatform;
+          post_title?: string;
+          post_url?: string | null;
+          external_post_id?: string | null;
+          published_at?: string | null;
+          snapshot_date?: string;
+          views?: number;
+          likes?: number;
+          comments?: number;
+          shares?: number;
+          saves?: number;
+          clicks?: number | null;
+          conversions?: number | null;
+          revenue_generated?: number | null;
+          watch_time_seconds?: number | null;
+          retention_rate_pct?: number | null;
+          data_source?: PerformanceDataSource;
+          is_manual_entry?: boolean;
+          account_id?: string | null;
+          last_synced_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      analytics_insights: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          analysis_type: string;
+          period_start: string;
+          period_end: string;
+          performance_grade: InsightGrade;
+          top_performing_ids: Json;
+          weak_performing_ids: Json;
+          content_patterns: Json;
+          audience_response: Json;
+          strategy_alignment: Json;
+          recommendations: Json;
+          model_id: string;
+          tokens_used: number;
+          cost_usd: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          analysis_type?: string;
+          period_start: string;
+          period_end: string;
+          performance_grade: InsightGrade;
+          top_performing_ids?: Json;
+          weak_performing_ids?: Json;
+          content_patterns?: Json;
+          audience_response?: Json;
+          strategy_alignment?: Json;
+          recommendations?: Json;
+          model_id?: string;
+          tokens_used?: number;
+          cost_usd?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          analysis_type?: string;
+          period_start?: string;
+          period_end?: string;
+          performance_grade?: InsightGrade;
+          top_performing_ids?: Json;
+          weak_performing_ids?: Json;
+          content_patterns?: Json;
+          audience_response?: Json;
+          strategy_alignment?: Json;
+          recommendations?: Json;
+          model_id?: string;
+          tokens_used?: number;
+          cost_usd?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      support_tickets: {
+        Row: {
+          id: string;
+          workspace_id: string;
+          user_id: string;
+          ticket_number: string;
+          subject: string;
+          category: SupportTicketCategory;
+          priority: SupportTicketPriority;
+          status: SupportTicketStatus;
+          message: string;
+          resolution_notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id: string;
+          user_id: string;
+          ticket_number: string;
+          subject: string;
+          category: SupportTicketCategory;
+          priority?: SupportTicketPriority;
+          status?: SupportTicketStatus;
+          message: string;
+          resolution_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string;
+          user_id?: string;
+          ticket_number?: string;
+          subject?: string;
+          category?: SupportTicketCategory;
+          priority?: SupportTicketPriority;
+          status?: SupportTicketStatus;
+          message?: string;
+          resolution_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      data_retention_logs: {
+        Row: {
+          id: string;
+          workspace_id: string | null;
+          policy_name: string;
+          items_purged: number;
+          details: Json;
+          executed_at: string;
+        };
+        Insert: {
+          id?: string;
+          workspace_id?: string | null;
+          policy_name: string;
+          items_purged?: number;
+          details?: Json;
+          executed_at?: string;
+        };
+        Update: {
+          id?: string;
+          workspace_id?: string | null;
+          policy_name?: string;
+          items_purged?: number;
+          details?: Json;
+          executed_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -1654,6 +2221,80 @@ export type Database = {
         };
         Returns: Json;
       };
+      is_superadmin: {
+        Args: {
+          user_id?: string;
+        };
+        Returns: boolean;
+      };
+      deduct_workspace_credits: {
+        Args: {
+          p_workspace_id: string;
+          p_amount: number;
+          p_description: string;
+          p_idempotency_key?: string | null;
+          p_reference_id?: string | null;
+          p_user_id?: string | null;
+        };
+        Returns: Json;
+      };
+      refund_workspace_credits: {
+        Args: {
+          p_workspace_id: string;
+          p_amount: number;
+          p_reason: string;
+          p_idempotency_key?: string | null;
+          p_reference_id?: string | null;
+        };
+        Returns: Json;
+      };
+      allocate_workspace_credits: {
+        Args: {
+          p_workspace_id: string;
+          p_amount: number;
+          p_type?: string;
+          p_idempotency_key?: string | null;
+          p_description?: string;
+        };
+        Returns: Json;
+      };
+      activate_subscription_payment: {
+        Args: {
+          p_order_id: string;
+          p_midtrans_status: string;
+          p_payment_type?: string | null;
+          p_raw_payload: Json;
+        };
+        Returns: Json;
+      };
+      record_performance_snapshot: {
+        Args: {
+          p_workspace_id: string;
+          p_content_item_id?: string | null;
+          p_platform: string;
+          p_post_title: string;
+          p_post_url?: string | null;
+          p_views: number;
+          p_likes: number;
+          p_comments: number;
+          p_shares: number;
+          p_saves: number;
+          p_clicks?: number | null;
+          p_conversions?: number | null;
+          p_watch_time?: number | null;
+          p_data_source?: string;
+          p_is_manual?: boolean;
+          p_account_id?: string | null;
+        };
+        Returns: Json;
+      };
+      execute_data_retention_cleanup: {
+        Args: {
+          p_workspace_id?: string | null;
+          p_dry_run?: boolean;
+        };
+        Returns: Json;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
@@ -1688,3 +2329,16 @@ export type WorkflowRunRow = Database["public"]["Tables"]["workflow_runs"]["Row"
 export type WorkflowStepRow = Database["public"]["Tables"]["workflow_steps"]["Row"];
 export type WorkflowScheduleRow = Database["public"]["Tables"]["workflow_schedules"]["Row"];
 export type WorkflowLogRow = Database["public"]["Tables"]["workflow_logs"]["Row"];
+
+export type SaasPlanRow = Database["public"]["Tables"]["saas_plans"]["Row"];
+export type SubscriptionRow = Database["public"]["Tables"]["subscriptions"]["Row"];
+export type PaymentTransactionRow = Database["public"]["Tables"]["payment_transactions"]["Row"];
+export type SocialAccountRow = Database["public"]["Tables"]["social_accounts"]["Row"];
+export type PublishingJobRow = Database["public"]["Tables"]["publishing_jobs"]["Row"];
+export type PublishingLogRow = Database["public"]["Tables"]["publishing_logs"]["Row"];
+export type SystemSettingRow = Database["public"]["Tables"]["system_settings"]["Row"];
+
+export type ContentPerformanceSnapshotRow = Database["public"]["Tables"]["content_performance_snapshots"]["Row"];
+export type AnalyticsInsightRow = Database["public"]["Tables"]["analytics_insights"]["Row"];
+export type SupportTicketRow = Database["public"]["Tables"]["support_tickets"]["Row"];
+export type DataRetentionLogRow = Database["public"]["Tables"]["data_retention_logs"]["Row"];
